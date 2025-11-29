@@ -7,4 +7,6 @@ add_executable(embedded-vehicle-stack
         src/main.cpp
         src/core/ControlSystem.h
         src/core/ControlSystem.cpp
+        src/utils/Logger.cpp
+        src/utils/Logger.h
 )
