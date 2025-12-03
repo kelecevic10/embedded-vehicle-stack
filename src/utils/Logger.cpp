@@ -21,7 +21,7 @@ void Logger::log(LogType type, std::string_view message) {
 
     out << color
         << std::format("[{}] [{}] {}", str, timestamp, message)
-        << "\033[0m"                // reset color
+        << TextColor::RESET                // reset color
         << '\n';
 }
 

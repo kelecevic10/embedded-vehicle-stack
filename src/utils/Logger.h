@@ -4,6 +4,7 @@
 
 # pragma once
 #include <cstdint>
+#include <fstream>
 #include <string>
 
 
@@ -14,6 +15,14 @@ enum class LogType : uint8_t {
     WARNING,
     ERROR
 };
+
+namespace TextColor {
+    constexpr std::string_view GREEN  = "\033[0;32m";
+    constexpr std::string_view YELLOW = "\033[0;33m";
+    constexpr std::string_view RED    = "\033[0;31m";
+    constexpr std::string_view RESET  = "\033[0m";
+}
+
 
 constexpr std::string_view logTypeToString(LogType type) {
     switch (type) {
@@ -26,11 +35,11 @@ constexpr std::string_view logTypeToString(LogType type) {
 
 inline std::string_view logTypeToColor(LogType type) {
     switch (type) {
-        case LogType::INFO: return "\033[0;32m";
-        case LogType::WARNING: return "\033[0;33m";
-        case LogType::ERROR: return "\033[0;31m";
+        case LogType::INFO: return TextColor::GREEN;
+        case LogType::WARNING: return TextColor::YELLOW;
+        case LogType::ERROR: return TextColor::RED;
     }
-    return "\033[0m";
+    return TextColor::RESET;
 }
 
 class Logger {
@@ -44,6 +53,7 @@ public:
 
 private:
     static void log(LogType, std::string_view);
+
 };
 
 
