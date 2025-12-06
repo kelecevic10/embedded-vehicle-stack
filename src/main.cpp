@@ -8,7 +8,7 @@ int main() {
 
     Logger::addSink(std::make_unique<TerminalSink>());
 
-    auto fileSink = std::make_unique<FileSink>("log.txt");
+    auto fileSink = std::make_unique<FileSink>("log1.txt");
     FileSink* fileSinkptr = fileSink.get();
     Logger::addSink(std::move(fileSink));
 
