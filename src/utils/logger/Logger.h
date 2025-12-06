@@ -4,11 +4,10 @@
 
 # pragma once
 #include <cstdint>
-#include <fstream>
-#include <string>
+#include <memory>
+#include <vector>
+#include "Sink.h"
 
-
-// TODO: maybe log into file
 
 enum class LogType : uint8_t {
     INFO,
@@ -44,16 +43,25 @@ inline std::string_view logTypeToColor(LogType type) {
 
 class Logger {
 public:
-    Logger() = delete;
-    ~Logger() = delete;
+    Logger() = default;
+    ~Logger() = default;
 
     static void info(std::string_view);
     static void warning(std::string_view);
     static void error(std::string_view);
 
-private:
-    static void log(LogType, std::string_view);
+    static void addSink(std::unique_ptr<Sink>);
+    static void removeSink(const Sink*);
 
+    static void setDefaultLogFolder(const std::string&);
+    static const std::string& getDefaultLogFolder();
+    static std::string buildLogFilePath(std::string_view);
+
+private:
+    static std::string formatLog(LogType, std::string_view);
+    static std::vector<std::unique_ptr<Sink>> sinks;
+
+    static inline std::string defaultLogFolder = "../logs/";
 };
 
 
