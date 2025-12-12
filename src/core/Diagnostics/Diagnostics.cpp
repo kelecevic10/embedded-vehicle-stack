@@ -108,5 +108,6 @@ bool Diagnostics::isHealthy() {
 }
 
 SnapShot Diagnostics::getSnapShot() {
+    std::lock_guard<std::mutex> lock(snapShotMutex);
     return snapShot;
 }
