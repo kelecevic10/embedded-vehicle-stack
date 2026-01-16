@@ -12,8 +12,8 @@ public:
     DiskMonitor();
 
     void update() override;
-    std::string_view getName() const override;
-    bool isCritical() const override;
+    [[nodiscard]] std::string_view getName() const override;
+    [[nodiscard]] bool isCritical() const override;
     MonitorStatus status() override;
 
     double getDiskUsage() const { return usagePercent; }
