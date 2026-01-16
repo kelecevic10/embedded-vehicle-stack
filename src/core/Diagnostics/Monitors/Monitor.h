@@ -40,7 +40,7 @@ public:
     // virtual void populateSnapShot(SnapShot& snap_shot) = 0;
 
     // expose the human-readable Monitor name as a reference
-    // virtual std::string_view getName() const = 0;
+    virtual std::string_view getName() const = 0;
 
     // Diag checks whether a monitor's state has a huge impact on system health
     virtual bool isCritical() const = 0;

@@ -25,6 +25,10 @@ void CpuMonitor::update() {
     // Logger::info("CPU usage: " + std::to_string(cpuUsage) + "%");
 }
 
+std::string_view CpuMonitor::getName() const {
+    return "cpu monitor";
+}
+
 bool CpuMonitor::isCritical() const {
     return true;
 }

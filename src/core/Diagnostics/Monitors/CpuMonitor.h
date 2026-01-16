@@ -34,7 +34,7 @@ public:
     void update() override;
 
     // void populateSnapShot(SnapShot &snap_shot) override;
-    // std::string_view getName() const override;
+    std::string_view getName() const override;
 
     // Monitor Status & Importance
     bool isCritical() const override;
