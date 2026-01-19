@@ -3,27 +3,59 @@
 //
 
 #include "Diagnostics.h"
-
 #include <format>
 
+#include "Monitors/CpuMonitor.h"
+#include "Monitors/DiskMonitor.h"
+#include "Monitors/RamMonitor.h"
 #include "utils/TimeUtils.h"
 #include "utils/logger/Logger.h"
 
+// static member definitions
+std::vector<std::unique_ptr<Monitor>> Diagnostics::monitors_{};
+
+CpuMonitor* Diagnostics::cpu_monitor_ = nullptr;
+RamMonitor* Diagnostics::ram_monitor_ = nullptr;
+DiskMonitor* Diagnostics::disk_monitor_ = nullptr;
+
+SnapShot Diagnostics::snapShot_ {};
+std::mutex Diagnostics::snapShotMutex_;
+
+void Diagnostics::initMonitors() {
+    cpu_monitor_ = registerMonitor(std::make_unique<CpuMonitor>());
+    disk_monitor_ = registerMonitor(std::make_unique<DiskMonitor>());
+    ram_monitor_ = registerMonitor(std::make_unique<RamMonitor>());
+}
+
 
 void Diagnostics::start() {
-    if (running) {
+    if (running.load()) {
         Logger::warning("Diagnostics already running!");
         return ;
     }
 
-    // if the thread already exists and is joinable - avoid the double start
+    if (monitors_.empty())
+        initMonitors();
+
+    // if the thread already exists - avoid the double start
     if (diagThread.joinable()) {
-        Logger::warning("Diagnostics thread already created but still running!");
+        Logger::warning("Diagnostics thread already created!");
         return ;
     }
 
     running = true;
-    diagThread = std::thread(diagnosisLoop);
+
+    try {
+        diagThread = std::thread(diagnosisLoop);
+    } catch (const std::system_error &e) {
+        Logger::error(std::format("Failed to create diagnostics thread: {}", e.what()));
+        running = false;
+        monitors_.clear();
+        cpu_monitor_ = nullptr;
+        ram_monitor_ = nullptr;
+        disk_monitor_ = nullptr;
+        return;
+    }
 
     Logger::info("Diagnostics started!");
 }
@@ -31,83 +63,102 @@ void Diagnostics::start() {
 void Diagnostics::stop() {
     if (!running) {
         Logger::warning("Diagnostics stop() called but module is not running!");
-        return ; 
+        return ;
     }
-    
+
     running = false;
-    
+
     if (diagThread.joinable()) {
         diagThread.join();
         Logger::info("Diagnostics stopped!");
     } else {
         Logger::warning("Diagnostics thread not running!");
     }
+
+    monitors_.clear();
+    cpu_monitor_ = nullptr;
+    disk_monitor_ = nullptr;
+    ram_monitor_ = nullptr;
 }
 
-void Diagnostics::buildSnapShot (
-    const double cpu_usage, const double ram_usage,
-    const double disk_usage, const double cpu_temp,
-    const double network_rtt
-    ) {
-    std::lock_guard<std::mutex> lock(snapShotMutex);
-
-    snapShot.cpu_usage = cpu_usage;
-    snapShot.ram_usage = ram_usage;
-    snapShot.disk_usage = disk_usage;
-    snapShot.cpu_temp = cpu_temp;
-    snapShot.network_rtt = network_rtt;
-    snapShot.timestamp = TimeUtils::get_time_in_ms();
-}
 
 void Diagnostics::diagnosisLoop() {
     auto next = std::chrono::steady_clock::now();
-    while (running.load(std::memory_order_relaxed)) {
-        double cpu_usage = updateCPU();
-        double ram_usage = updateRam();
-        double disk_usage = updateDisk();
-        double cpu_temp = updateTemp();
-        double network_stats = updateNetwork();
+    while (running.load()) {
+        // iterate over all monitors to check system health and collect metrics for the snapshot
+        for (const auto& monitor : monitors_) {
+            Monitor* m_ptr = monitor.get();
+            m_ptr->update();
+            MonitorStatus status = m_ptr->status();
 
-        buildSnapShot(cpu_usage, ram_usage, disk_usage, cpu_temp, network_stats);
+            // diag health check
+            // TODO: Verify the correctness of the logic below
+            switch (status) {
+                case MonitorStatus::ERROR:
+                    if (m_ptr->isCritical())
+                        health_ = DiagHealth::ERROR;
+                    else
+                        health_ = DiagHealth::WARNING;
+                    break;
+                case MonitorStatus::WARNING:
+                    if (health_ == DiagHealth::OK)
+                        health_ = DiagHealth::WARNING;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // building & saving a snapshot
+        buildSnapShot();
         writeSnapShotToFile();
 
-        next += std::chrono::milliseconds(sleepingTime);
+        // the Diagnostics system's update interval
+        next += std::chrono::milliseconds(diagFrequency);
         std::this_thread::sleep_until(next);
     }
 }
 
+DiagHealth Diagnostics::health() {
+    return health_;
+}
+
 void Diagnostics::setDiagFrequency(int frequency) {
-    sleepingTime = frequency;
+    diagFrequency = frequency;
+}
+
+void Diagnostics::buildSnapShot () {
+    std::lock_guard<std::mutex> lock(snapShotMutex_);
+    snapShot_.cpu_usage = cpu_monitor_->getCpuUsage();
+    snapShot_.ram_usage = ram_monitor_->getRamUsage();
+    snapShot_.disk_usage = disk_monitor_->getDiskUsage();
+    snapShot_.timestamp = TimeUtils::get_time_in_ms();
 }
 
 void Diagnostics::writeSnapShotToFile() {
-    SnapShot copy;
+    SnapShot copy {};
 
     {
-        std::lock_guard<std::mutex> lock(snapShotMutex);
-        copy = snapShot;
+        std::lock_guard<std::mutex> lock(snapShotMutex_);
+        copy = snapShot_;
     }
 
-    Logger::info("================= SNAPSHOT =================");
-    Logger::info(SnapShotToString(copy));
+    Logger::info(
+        "\n================= SNAPSHOT =================\n" +
+            SnapShotToString(copy) +
+            "\n============================================\n"
+        );
 }
 
 std::string SnapShotToString(const SnapShot& snap) {
     std::string time_str = TimeUtils::format_time(snap.timestamp);
     return std::format(
-        "TIME: {} CPU: {:.2f} RAM: {:.2f} DISK: {:.2f} CPU_TEMP: {:.2f} RTT: {:.2f}",
-        time_str, snap.cpu_usage, snap.ram_usage, snap.disk_usage, snap.cpu_temp, snap.network_rtt
+        "TIME: {}\n CPU: {:.2f}\n RAM: {:.2f}\n DISK: {:.2f}\n",
+        time_str, snap.cpu_usage, snap.ram_usage, snap.disk_usage
         );
-
-}
-
-bool Diagnostics::isHealthy() {
-    // maybe warning is ok too
-    // TODO: the * implementation here
-    return health == DiagHealth::OK;
 }
 
 SnapShot Diagnostics::getSnapShot() {
-    std::lock_guard<std::mutex> lock(snapShotMutex);
-    return snapShot;
+    std::lock_guard<std::mutex> lock(snapShotMutex_);
+    return snapShot_;
 }

@@ -62,8 +62,8 @@ std::pair<uint64_t, uint64_t> RamMonitor::readMemoryUsage() {
 
         memoryUsage[key] = value;
 
-        if (memoryUsage.find("MemTotal") != memoryUsage.end()
-            && memoryUsage.find("MemAvailable") != memoryUsage.end()) {
+        if (memoryUsage.contains("MemTotal")
+            && memoryUsage.contains("MemAvailable")) {
             break;
         }
     }

@@ -47,7 +47,6 @@ public:
 
     // monitor can expose internal health state to the other modules
     virtual MonitorStatus status() = 0;
-
     // if a monitor encounters a fatal failure, it can report
     // error details here for diagnostics to log
     // virtual std::optional<std::string> getLastError() const = 0;

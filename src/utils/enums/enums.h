@@ -10,8 +10,8 @@ struct SnapShot {
     double cpu_usage;
     double ram_usage;
     double disk_usage;
-    double cpu_temp;
-    double network_rtt;
+    // double cpu_temp;
+    // double network_rtt;
 
     uint64_t timestamp;
 };

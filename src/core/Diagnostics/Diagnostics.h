@@ -8,6 +8,13 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
+
+#include "utils/enums/enums.h"
+#include "core/Diagnostics/Monitors/Monitor.h"
+#include "Monitors/CpuMonitor.h"
+#include "Monitors/DiskMonitor.h"
+#include "Monitors/RamMonitor.h"
 
 enum struct DiagHealth {
     OK,
@@ -15,44 +22,46 @@ enum struct DiagHealth {
     ERROR
 };
 
-struct SnapShot {
-    double cpu_usage;
-    double ram_usage;
-    double disk_usage;
-    double cpu_temp;
-    double network_rtt;
-
-    uint64_t timestamp;
-};
-
 std::string SnapShotToString(const SnapShot&);
 
 class Diagnostics {
 public:
     Diagnostics() = delete;
-    ~Diagnostics() = delete;
 
+    // public module api
     static void start();
     static void stop();
+    static DiagHealth health();
+
     static void setDiagFrequency(int frequency);
     static void writeSnapShotToFile();
-
     static SnapShot getSnapShot();
 
-    // TODO: Define health thresholds for snapshot metrics. *
-    static bool isHealthy();
-
-    static SnapShot snapShot;
-    static std::mutex snapShotMutex;
-
-    static inline DiagHealth health {DiagHealth::OK};
+    template<typename T>
+    static T* registerMonitor(std::unique_ptr<T> monitor) {
+        T* raw_ptr = monitor.get();
+        monitors_.push_back(std::move(monitor));
+        return raw_ptr;
+    }
 private:
-    static inline std::atomic<bool> running {false};
-    static inline int sleepingTime {500};   // ms
+    // controls the start() and stop() methods coordination
+    static inline std::atomic<bool> running;
+    static inline int diagFrequency {3000};   // ms
     static inline std::thread diagThread;
-
     static void diagnosisLoop();
-    static void buildSnapShot(double, double, double, double, double);
+    static void buildSnapShot();
+    static void initMonitors();
+
+    // class fields
+    static std::vector<std::unique_ptr<Monitor>> monitors_;
+    static CpuMonitor* cpu_monitor_;
+    static RamMonitor* ram_monitor_;
+    static DiskMonitor* disk_monitor_;
+
+    static SnapShot snapShot_;
+    static std::mutex snapShotMutex_;
+
+    static inline DiagHealth health_ {DiagHealth::OK};
 };
 
 
