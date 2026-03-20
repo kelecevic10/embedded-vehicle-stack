@@ -2,3 +2,7 @@ logs.txt
 logs
 *.log
 *.txt
+main.cpp
+ECU-car.iml
+editor.xml
+.idea
