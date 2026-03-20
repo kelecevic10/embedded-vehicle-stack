@@ -57,7 +57,7 @@ public:
 protected:
     MonitorStatus monitorStatus;
 private:
-    int refreshInterval = 0;
+
 };
 
 #endif //EMBEDDED_VEHICLE_STACK_MONITOR_H

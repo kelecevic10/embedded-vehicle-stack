@@ -46,7 +46,7 @@ std::pair<uint64_t, uint64_t> RamMonitor::readMemoryUsage() {
     std::ifstream file("/proc/meminfo");
     if (!file.is_open()) {
         Logger::error("Could not open /proc/meminfo");
-        monitorStatus = MonitorStatus::ERROR;
+        monitorStatus = MonitorStatus::WARNING;
         return {0, 0};
     }
 

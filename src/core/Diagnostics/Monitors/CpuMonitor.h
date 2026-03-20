@@ -38,7 +38,7 @@ public:
 
     // Monitor Status & Importance
     bool isCritical() const override;
-    MonitorStatus status()  override;
+    MonitorStatus status() override;
 
 private:
     // helper functions

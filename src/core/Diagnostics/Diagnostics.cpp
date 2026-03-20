@@ -12,7 +12,7 @@
 #include "utils/logger/Logger.h"
 
 // static member definitions
-std::vector<std::unique_ptr<Monitor>> Diagnostics::monitors_{};
+std::vector<std::unique_ptr<Monitor>> Diagnostics::monitors_ {};
 
 CpuMonitor* Diagnostics::cpu_monitor_ = nullptr;
 RamMonitor* Diagnostics::ram_monitor_ = nullptr;
@@ -38,6 +38,10 @@ void Diagnostics::start() {
         initMonitors();
 
     // if the thread already exists - avoid the double start
+    // this serves different purposes than atomic running - it manages the code logic
+    // whether the whole system should be turned on/off
+    // we would set running = false just to indicate the system to shut down and
+    // signal the module to join its thread
     if (diagThread.joinable()) {
         Logger::warning("Diagnostics thread already created!");
         return ;
@@ -85,24 +89,22 @@ void Diagnostics::stop() {
 void Diagnostics::diagnosisLoop() {
     auto next = std::chrono::steady_clock::now();
     while (running.load()) {
+        health_ = DiagHealth::OK;
+
         // iterate over all monitors to check system health and collect metrics for the snapshot
         for (const auto& monitor : monitors_) {
             Monitor* m_ptr = monitor.get();
             m_ptr->update();
-            MonitorStatus status = m_ptr->status();
 
-            // diag health check
-            // TODO: Verify the correctness of the logic below
-            switch (status) {
+            switch (m_ptr->status()) {
                 case MonitorStatus::ERROR:
                     if (m_ptr->isCritical())
                         health_ = DiagHealth::ERROR;
                     else
-                        health_ = DiagHealth::WARNING;
+                        health_ = (health_ == DiagHealth::ERROR) ? health_ : DiagHealth::WARNING;
                     break;
                 case MonitorStatus::WARNING:
-                    if (health_ == DiagHealth::OK)
-                        health_ = DiagHealth::WARNING;
+                    health_ = (health_ == DiagHealth::OK) ? DiagHealth::WARNING : health_;
                     break;
                 default:
                     break;
@@ -153,7 +155,7 @@ void Diagnostics::writeSnapShotToFile() {
 std::string SnapShotToString(const SnapShot& snap) {
     std::string time_str = TimeUtils::format_time(snap.timestamp);
     return std::format(
-        "TIME: {}\n CPU: {:.2f}\n RAM: {:.2f}\n DISK: {:.2f}\n",
+        "Time: {}\n CPU: {:.2f}\n RAM: {:.2f}\n DISK: {:.2f}\n",
         time_str, snap.cpu_usage, snap.ram_usage, snap.disk_usage
         );
 }

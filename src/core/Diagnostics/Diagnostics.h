@@ -16,6 +16,7 @@
 #include "Monitors/DiskMonitor.h"
 #include "Monitors/RamMonitor.h"
 
+// global health of all registered monitors
 enum struct DiagHealth {
     OK,
     WARNING,
@@ -44,7 +45,7 @@ public:
         return raw_ptr;
     }
 private:
-    // controls the start() and stop() methods coordination
+    // used to decide whether the diag should be active
     static inline std::atomic<bool> running;
     static inline int diagFrequency {3000};   // ms
     static inline std::thread diagThread;
