@@ -46,20 +46,22 @@ inline std::ostream& operator<< (std::ostream& os, const SystemState state) {
 
 class System {
 public:
-    System(): state_(SystemState::Stopped), subsystems_()
-    {
+    System(): state_(SystemState::Stopped), subsystems_() {
         init();
     };
     ~System();
 
-    SystemState state_;
-    std::vector<std::unique_ptr<Subsystem>> subsystems_;
-
-
     // methods
     bool start();
     bool stop();
+
+    // getters
+    SystemState getState() const { return state_; }
 private:
+
+    SystemState state_;
+    std::vector<std::unique_ptr<Subsystem>> subsystems_;
+
 
     // methods
     void init();
