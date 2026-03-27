@@ -30,18 +30,18 @@ class Diagnostics : public Subsystem {
 public:
     Diagnostics()
         : diagFrequency(3000),
+        monitors_{},
         running(false),
         cpu_monitor_(nullptr),
         ram_monitor_(nullptr),
         disk_monitor_(nullptr),
         snapShot_{},
-        health_(DiagHealth::OK),
-        monitors_{}
+        health_(DiagHealth::OK)
     {
         initMonitors();
     }
 
-    ~Diagnostics();
+    ~Diagnostics() override;
 
     // Subsystem api
     bool start() override;
