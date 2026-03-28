@@ -13,6 +13,7 @@
 
 enum class SystemState {
     Initializing,       // initializing the system
+    Initialized,        // system successfully initialized
     Starting,           // starting the whole system
     Running,            // successfully running
     Stopping,           // shutting down
@@ -24,6 +25,8 @@ inline std::string toString(const SystemState state) {
     switch (state) {
         case SystemState::Initializing:
             return "Initializing";
+        case SystemState::Initialized:
+            return "Initialized";
         case SystemState::Running:
             return "Running";
         case SystemState::Stopping:

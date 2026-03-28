@@ -13,8 +13,11 @@
 void System::init() {
     state_ = SystemState::Initializing;
     subsystems_.push_back(std::make_unique<Diagnostics>());
-    // todo: check if the creation of all subsystems is correct; in opposite, go to the faulted state
+    // check if the creation of all subsystems is correct; in opposite, go to the faulted state
     // currently, there is no subsystem that can fail in creation stage
+
+    state_ = SystemState::Initialized;
+    Logger::info("System initialized!");
 }
 
 System::~System() {
@@ -26,7 +29,7 @@ System::~System() {
 }
 
 bool System::start() {
-    if (state_ != SystemState::Initializing && state_ != SystemState::Stopped) {
+    if (state_ != SystemState::Initialized && state_ != SystemState::Stopped) {
         Logger::error(std::format("Cannot start the system from {} state", toString(state_)));
         return false;
     }
