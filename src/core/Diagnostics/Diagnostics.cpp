@@ -11,15 +11,6 @@
 #include "utils/TimeUtils.h"
 #include "utils/logger/Logger.h"
 
-// static member definitions
-std::vector<std::unique_ptr<Monitor>> Diagnostics::monitors_ {};
-
-CpuMonitor* Diagnostics::cpu_monitor_ = nullptr;
-RamMonitor* Diagnostics::ram_monitor_ = nullptr;
-DiskMonitor* Diagnostics::disk_monitor_ = nullptr;
-
-SnapShot Diagnostics::snapShot_ {};
-std::mutex Diagnostics::snapShotMutex_;
 
 void Diagnostics::initMonitors() {
     cpu_monitor_ = registerMonitor(std::make_unique<CpuMonitor>());
@@ -28,14 +19,21 @@ void Diagnostics::initMonitors() {
 }
 
 
-void Diagnostics::start() {
+Diagnostics::~Diagnostics() {
+    if (running.load()) {
+        Diagnostics::stop();
+    }
+}
+
+bool Diagnostics::start() {
     if (running.load()) {
         Logger::warning("Diagnostics already running!");
-        return ;
+        return false;
     }
 
-    if (monitors_.empty())
+    if (monitors_.empty()) {
         initMonitors();
+    }
 
     // if the thread already exists - avoid the double start
     // this serves different purposes than atomic running - it manages the code logic
@@ -44,13 +42,11 @@ void Diagnostics::start() {
     // signal the module to join its thread
     if (diagThread.joinable()) {
         Logger::warning("Diagnostics thread already created!");
-        return ;
+        return false;
     }
 
-    running = true;
-
     try {
-        diagThread = std::thread(diagnosisLoop);
+        diagThread = std::thread(&Diagnostics::diagnosisLoop, this);
     } catch (const std::system_error &e) {
         Logger::error(std::format("Failed to create diagnostics thread: {}", e.what()));
         running = false;
@@ -58,16 +54,18 @@ void Diagnostics::start() {
         cpu_monitor_ = nullptr;
         ram_monitor_ = nullptr;
         disk_monitor_ = nullptr;
-        return;
+        return false;
     }
-
+    running = true;
     Logger::info("Diagnostics started!");
+
+    return true;
 }
 
-void Diagnostics::stop() {
-    if (!running) {
-        Logger::warning("Diagnostics stop() called but module is not running!");
-        return ;
+bool Diagnostics::stop() {
+    if (!running.load() && !diagThread.joinable()) {
+        Logger::warning("Diagnostics stop() called but module is already stopped.");
+        return true;
     }
 
     running = false;
@@ -75,14 +73,14 @@ void Diagnostics::stop() {
     if (diagThread.joinable()) {
         diagThread.join();
         Logger::info("Diagnostics stopped!");
-    } else {
-        Logger::warning("Diagnostics thread not running!");
     }
 
     monitors_.clear();
     cpu_monitor_ = nullptr;
-    disk_monitor_ = nullptr;
     ram_monitor_ = nullptr;
+    disk_monitor_ = nullptr;
+
+    return true;
 }
 
 
@@ -121,7 +119,7 @@ void Diagnostics::diagnosisLoop() {
     }
 }
 
-DiagHealth Diagnostics::health() {
+DiagHealth Diagnostics::health() const {
     return health_;
 }
 
@@ -146,17 +144,17 @@ void Diagnostics::writeSnapShotToFile() {
     }
 
     Logger::info(
-        "\n================= SNAPSHOT =================\n" +
+        "\n----------------- SNAPSHOT ------------------\n" +
             SnapShotToString(copy) +
-            "\n============================================\n"
+            "--------------------------------------------\n"
         );
 }
 
 std::string SnapShotToString(const SnapShot& snap) {
     std::string time_str = TimeUtils::format_time(snap.timestamp);
     return std::format(
-        "Time: {}\n CPU: {:.2f}\n RAM: {:.2f}\n DISK: {:.2f}\n",
-        time_str, snap.cpu_usage, snap.ram_usage, snap.disk_usage
+        "CPU: {:.2f}\nRAM: {:.2f}\nDISK: {:.2f}\nTime: {}\n",
+        snap.cpu_usage, snap.ram_usage, snap.disk_usage, time_str
         );
 }
 

@@ -12,6 +12,7 @@
 
 #include "utils/enums/enums.h"
 #include "core/Diagnostics/Monitors/Monitor.h"
+#include "core/System/Subsystem.h"
 #include "Monitors/CpuMonitor.h"
 #include "Monitors/DiskMonitor.h"
 #include "Monitors/RamMonitor.h"
@@ -25,44 +26,61 @@ enum struct DiagHealth {
 
 std::string SnapShotToString(const SnapShot&);
 
-class Diagnostics {
+class Diagnostics : public Subsystem {
 public:
-    Diagnostics() = delete;
+    Diagnostics()
+        : diagFrequency(3000),
+        monitors_{},
+        running(false),
+        cpu_monitor_(nullptr),
+        ram_monitor_(nullptr),
+        disk_monitor_(nullptr),
+        snapShot_{},
+        health_(DiagHealth::OK)
+    {
+        initMonitors();
+    }
 
-    // public module api
-    static void start();
-    static void stop();
-    static DiagHealth health();
+    ~Diagnostics() override;
 
-    static void setDiagFrequency(int frequency);
-    static void writeSnapShotToFile();
-    static SnapShot getSnapShot();
+    // Subsystem api
+    bool start() override;
+    bool stop() override;
+    std::string_view name() const override {
+        return "Diagnostics";
+    };
+
+    DiagHealth health() const;
+    void setDiagFrequency(int frequency);
+    void writeSnapShotToFile();
+    SnapShot getSnapShot();
 
     template<typename T>
-    static T* registerMonitor(std::unique_ptr<T> monitor) {
+    T* registerMonitor(std::unique_ptr<T> monitor) {
         T* raw_ptr = monitor.get();
         monitors_.push_back(std::move(monitor));
         return raw_ptr;
     }
 private:
-    // used to decide whether the diag should be active
-    static inline std::atomic<bool> running;
-    static inline int diagFrequency {3000};   // ms
-    static inline std::thread diagThread;
-    static void diagnosisLoop();
-    static void buildSnapShot();
-    static void initMonitors();
-
     // class fields
-    static std::vector<std::unique_ptr<Monitor>> monitors_;
-    static CpuMonitor* cpu_monitor_;
-    static RamMonitor* ram_monitor_;
-    static DiskMonitor* disk_monitor_;
+    int diagFrequency;
+    std::vector<std::unique_ptr<Monitor>> monitors_;
+    std::atomic<bool> running;
+    CpuMonitor* cpu_monitor_;
+    RamMonitor* ram_monitor_;
+    DiskMonitor* disk_monitor_;
 
-    static SnapShot snapShot_;
-    static std::mutex snapShotMutex_;
+    SnapShot snapShot_;
+    std::mutex snapShotMutex_;
 
-    static inline DiagHealth health_ {DiagHealth::OK};
+    DiagHealth health_;
+
+    std::thread diagThread;
+
+    // methods
+    void diagnosisLoop();
+    void buildSnapShot();
+    void initMonitors();
 };
 
 
