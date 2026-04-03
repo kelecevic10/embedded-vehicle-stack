@@ -15,6 +15,7 @@
 
 #include "core/System/Subsystem.h"
 #include "utils/TimeUtils.h"
+#include  "utils/enums/enums.h"
 
 
 enum class EventType {
@@ -23,20 +24,17 @@ enum class EventType {
 
     // Diagnostics
     DIAGNOSTICS_UPDATE,
+    DIAGNOSTICS_WARNING,
     DIAGNOSTICS_ALERT,
 };
 
-struct DiagnosticsData {
-    double cpu_usage;
-    double ram_usage;
-    double disk_usage;
-};
 
 using EventPayload = std::variant<
     std::monostate,   // empty, signal only
     std::string,
+    std::string_view,
     int,
-    DiagnosticsData
+    SnapShot
 >;
 
 struct Event {

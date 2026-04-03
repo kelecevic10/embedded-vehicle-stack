@@ -18,7 +18,7 @@ public:
     [[nodiscard]] bool isCritical() const override;
     MonitorStatus status() override;
 
-    double getRamUsage() const {return ramUsage;}
+    double getUsage() const override {return ramUsage;}
 
 private:
     double ramUsage;

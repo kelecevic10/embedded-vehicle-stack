@@ -12,10 +12,12 @@
 
 #include "utils/enums/enums.h"
 #include "core/Diagnostics/Monitors/Monitor.h"
+#include "core/MessageBus/MessageBus.h"
 #include "core/System/Subsystem.h"
 #include "Monitors/CpuMonitor.h"
 #include "Monitors/DiskMonitor.h"
 #include "Monitors/RamMonitor.h"
+#include "core/System/System.h"
 
 // global health of all registered monitors
 enum struct DiagHealth {
@@ -28,8 +30,9 @@ std::string SnapShotToString(const SnapShot&);
 
 class Diagnostics : public Subsystem {
 public:
-    Diagnostics()
-        : diagFrequency(3000),
+    Diagnostics(MessageBus* bus)
+        : messageBus_(bus),
+        diagFrequency(3000),
         monitors_{},
         running(false),
         cpu_monitor_(nullptr),
@@ -63,6 +66,7 @@ public:
     }
 private:
     // class fields
+    MessageBus* messageBus_;
     int diagFrequency;
     std::vector<std::unique_ptr<Monitor>> monitors_;
     std::atomic<bool> running;
@@ -75,12 +79,13 @@ private:
 
     DiagHealth health_;
 
-    std::thread diagThread;
+    std::jthread diagThread;
 
     // methods
     void diagnosisLoop();
     void buildSnapShot();
     void initMonitors();
+    void emitEvent(EventType, std::string_view, double, int) const;
 };
 
 

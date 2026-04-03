@@ -45,6 +45,9 @@ public:
     // Diag checks whether a monitor's state has a huge impact on system health
     virtual bool isCritical() const = 0;
 
+    // each monitor should provide double usage
+    virtual double getUsage() const = 0;
+
     // monitor can expose internal health state to the other modules
     virtual MonitorStatus status() = 0;
     // if a monitor encounters a fatal failure, it can report

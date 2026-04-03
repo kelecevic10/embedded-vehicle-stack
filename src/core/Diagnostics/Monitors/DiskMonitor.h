@@ -14,6 +14,7 @@ public:
     void update() override;
     [[nodiscard]] std::string_view getName() const override;
     [[nodiscard]] bool isCritical() const override;
+    double getUsage() const override {return usagePercent;}
     MonitorStatus status() override;
 
     double getDiskUsage() const { return usagePercent; }

@@ -28,7 +28,7 @@ public:
     CpuMonitor();
 
     // getter
-    double getCpuUsage() const { return cpuUsage; }
+    double getUsage() const override  { return cpuUsage; }
 
     // updates monitors internal state
     void update() override;
