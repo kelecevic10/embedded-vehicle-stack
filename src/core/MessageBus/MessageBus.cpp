@@ -9,19 +9,21 @@
 
 MessageBus::MessageBus() : isRunning(false)
 {
-    // todo: greska jer nit odmah izlazi iz while-a
-    thread_ = std::jthread(&MessageBus::loop, this);
+
 }
 
 bool MessageBus::start()
 {
     isRunning = true;
+    thread_ = std::jthread(&MessageBus::loop, this);
     return true;
 }
 
 bool MessageBus::stop()
 {
     isRunning = false;
+    // if the thread waits on cv, isRunning = false will not force it to quit the while loop and shut down
+    cv_.notify_one();
     return true;
 }
 
@@ -36,17 +38,23 @@ void MessageBus::loop()
     while (isRunning.load()) {
         std::unique_lock lock(mutex_);
 
-        cv_.wait(lock, [this](){return !messages_.empty();});
+        cv_.wait(lock, [this](){return !messages_.empty() || !isRunning.load();});
         while (!messages_.empty())
         {
-            const Event message = std::move(messages_.top());
+            // top() returns a const reference which is not moveable -> we cast it in non-const reference
+            std::unique_ptr<Event> msg = std::move(const_cast<std::unique_ptr<Event>&>(messages_.top()));
+            const Event& message = *msg;
             messages_.pop();
-            EventType messageType = message.type;
-            // eventually lock.unlock(mutex_) because its not a big deal if race condition occurs in subscribers_ ???
-            // plus additional locking before reading a most priority message
-            const auto& subscribers = subscribers_[messageType];
-            for (const auto& callback : subscribers) {
-                callback(message);
+
+            // copy all the callback functions and release a lock not to keep callback handlers in the critical section.
+            // we must copy subscribers because when iterating through them, if subscribe() adds a new one - program will crash
+            if (subscribers_.contains(message.type)) {
+                const auto subscribers = subscribers_[message.type];
+                lock.unlock();
+                for (const auto& callback : subscribers) {
+                    callback(message);
+                }
+                lock.lock();
             }
         }
     }
@@ -58,10 +66,9 @@ void MessageBus::subscribe(const EventType event, std::function<void(const Event
     subscribers_[event].push_back(std::move(handler));
 }
 
-void MessageBus::publish(const Event &event)
+void MessageBus::publish(Event event)
 {
     std::lock_guard lock(mutex_);
-    messages_.push(event);
+    messages_.push(std::make_unique<Event>(event));
     cv_.notify_one();
 }
-

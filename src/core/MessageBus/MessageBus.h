@@ -59,9 +59,9 @@ struct Event {
 };
 
 struct EventComparator {
-    bool operator()(const Event& a, const Event& b) const {
+    bool operator()(const std::unique_ptr<Event>& a, const std::unique_ptr<Event>& b) const {
         // returns true if a is less (important) than b
-        return a.priority > b.priority;
+        return a.get()->priority > b.get()->priority;
     }
 };
 
@@ -76,13 +76,14 @@ public:
     std::string_view name() const override;
 
     void subscribe(EventType event, std::function<void(const Event&)> handler);
-    void publish(const Event& event);
+    // prefer to move argument if possible (caller doesn't need that event anymore)
+    void publish(Event event);
 
 
 private:
     // event handler (callback functions) must have the signature below
     std::map<EventType, std::vector<std::function<void(const Event&)>>> subscribers_;
-    std::priority_queue<Event, std::vector<Event>, EventComparator> messages_;
+    std::priority_queue<std::unique_ptr<Event>, std::vector<std::unique_ptr<Event>>, EventComparator> messages_;
     std::jthread thread_;
     std::atomic<bool> isRunning;
     std::mutex mutex_;
