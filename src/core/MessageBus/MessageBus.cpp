@@ -77,6 +77,6 @@ void MessageBus::subscribe(const EventType event, std::function<void(const Event
 void MessageBus::publish(Event event)
 {
     std::lock_guard lock(mutex_);
-    messages_.push(std::make_unique<Event>(event));
+    messages_.push(std::make_unique<Event>(std::move(event)));
     cv_.notify_one();
 }

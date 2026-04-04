@@ -12,7 +12,9 @@
 
 void System::init() {
     state_ = SystemState::Initializing;
-    subsystems_.push_back(std::make_unique<Diagnostics>());
+
+    bus_ = std::make_unique<MessageBus>();
+    subsystems_.push_back(std::make_unique<Diagnostics>(bus_.get()));
     // check if the creation of all subsystems is correct; in opposite, go to the faulted state
     // currently, there is no subsystem that can fail in creation stage
 
@@ -36,6 +38,7 @@ bool System::start() {
 
     state_ = SystemState::Starting;
     Logger::info("Starting system ...");
+    bus_->start();
 
     std::vector<Subsystem*> started_modules;
     for (const auto& module : subsystems_) {
@@ -51,6 +54,7 @@ bool System::start() {
             }
             Logger::info("System rollback successfully done!");
             state_ = SystemState::Stopped;
+            bus_->stop();
             return false;  // system hasn't started successfully, but stayed in consistent state via rollback mechanism
         }
 
@@ -84,6 +88,9 @@ bool System::stop() {
         }
         Logger::info(std::format("Subsystem {} stopped", module->name()));
     }
+
+    bus_->stop();
+    Logger::info("Message bus stopped!");
 
     state_ = SystemState::Stopped;
     Logger::info("System stopped!");

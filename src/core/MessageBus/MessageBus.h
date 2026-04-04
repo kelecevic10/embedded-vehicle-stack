@@ -77,7 +77,6 @@ public:
     // prefer to move argument if possible (caller doesn't need that event anymore)
     void publish(Event event);
 
-
 private:
     // event handler (callback functions) must have the signature below
     std::map<EventType, std::vector<std::function<void(const Event&)>>> subscribers_;
