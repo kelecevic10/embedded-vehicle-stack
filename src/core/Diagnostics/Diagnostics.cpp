@@ -47,6 +47,7 @@ bool Diagnostics::start() {
     // }
 
     try {
+        running = true;
         diagThread = std::jthread(&Diagnostics::diagnosisLoop, this);
     } catch (const std::system_error &e) {
         Logger::error(std::format("Failed to create diagnostics thread: {}", e.what()));
@@ -57,7 +58,6 @@ bool Diagnostics::start() {
         disk_monitor_ = nullptr;
         return false;
     }
-    running = true;
     Logger::info("Diagnostics started!");
 
     return true;
@@ -70,11 +70,10 @@ bool Diagnostics::stop() {
     }
 
     running = false;
+    if (diagThread.joinable()) {
+        diagThread.join();
+    }
 
-    // if (diagThread.joinable()) {
-    //     diagThread.join();
-    //     Logger::info("Diagnostics stopped!");
-    // }
     monitors_.clear();
     cpu_monitor_ = nullptr;
     ram_monitor_ = nullptr;
