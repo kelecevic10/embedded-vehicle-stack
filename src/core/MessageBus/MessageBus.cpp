@@ -4,7 +4,10 @@
 
 #include "MessageBus.h"
 
+#include <format>
 #include <thread>
+
+#include "utils/logger/Logger.h"
 
 
 MessageBus::MessageBus() : isRunning(false)
@@ -15,7 +18,12 @@ MessageBus::MessageBus() : isRunning(false)
 bool MessageBus::start()
 {
     isRunning = true;
-    thread_ = std::jthread(&MessageBus::loop, this);
+    try {
+        thread_ = std::jthread(&MessageBus::loop, this);
+    } catch (std::system_error& e) {
+        Logger::error(std::format("Failed to create message bus thread: {}", e.what()));
+        return false;
+    }
     return true;
 }
 
