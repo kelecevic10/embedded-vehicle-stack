@@ -7,19 +7,21 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "utils/logger/Logger.h"
 
-DiskMonitor::DiskMonitor() : usagePercent(0.0)
+
+DiskMonitor::DiskMonitor() : usagePercent_(0.0)
 {
 
 }
 
 void DiskMonitor::update() {
-    DiskUsageInfo usage = readDiskUsage();
-    usagePercent = usage.usedPercent;
+    const DiskUsageInfo usage = readDiskUsage();
+    usagePercent_ = usage.usedPercent;
 
-    if (usagePercent > 90) {
+    if (usagePercent_ > 90) {
         monitorStatus = MonitorStatus::ERROR;
-    } else if (usagePercent > 75) {
+    } else if (usagePercent_ > 80) {
         monitorStatus = MonitorStatus::WARNING;
     } else {
         monitorStatus = MonitorStatus::OK;
@@ -43,17 +45,19 @@ DiskMonitor::DiskUsageInfo DiskMonitor::readDiskUsage() {
     struct statvfs fs {};
 
     if (statvfs("/", &fs) != 0) {
-        throw std::runtime_error("Could not read disk usage");
+        Logger::error("Could not read disk usage");
+        return {};
     }
 
-    uint64_t total = static_cast<uint64_t>(fs.f_blocks)  * fs.f_frsize;
-    uint64_t free  = static_cast<uint64_t>(fs.f_bavail)  * fs.f_frsize;
+    const uint64_t total = static_cast<uint64_t>(fs.f_blocks)  * fs.f_frsize;
+    const uint64_t free  = static_cast<uint64_t>(fs.f_bavail)  * fs.f_frsize;
 
     if (total == 0) {
-        throw std::runtime_error("Could not read disk usage");
+        Logger::error("Could not read disk usage");
+        return {};
     }
 
-    double usedPercent = (1.0 - (static_cast<double>(free) / static_cast<double>(total))) * 100.0;
+    const double usedPercent = (1.0 - (static_cast<double>(free) / static_cast<double>(total))) * 100.0;
 
     return DiskUsageInfo {
         .totalBytes = total,

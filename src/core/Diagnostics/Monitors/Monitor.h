@@ -7,10 +7,8 @@
 
 #pragma once
 
-#include <optional>
 #include <string_view>
 #include <ostream>
-#include "utils/enums/enums.h"
 
 enum class MonitorStatus {
     OK,
@@ -18,13 +16,17 @@ enum class MonitorStatus {
     ERROR
 };
 
-inline std::ostream& operator<<(std::ostream& os, const MonitorStatus& status) {
+inline std::string_view toString(const MonitorStatus status) {
     switch (status) {
-        case MonitorStatus::OK:      return os << "OK";
-        case MonitorStatus::WARNING: return os << "WARNING";
-        case MonitorStatus::ERROR:   return os << "ERROR";
-        default:                     return os << "UNKNOWN";
+        case MonitorStatus::OK: return "OK";
+        case MonitorStatus::WARNING: return "WARNING";
+        case MonitorStatus::ERROR: return "ERROR";
+        default: return "UNKNOWN";
     }
+}
+
+inline std::ostream &operator<<(std::ostream &os, const MonitorStatus &status) {
+    return os << toString(status);
 }
 
 class Monitor {

@@ -5,23 +5,22 @@
 #ifndef EMBEDDED_VEHICLE_STACK_RAMMONITOR_H
 #define EMBEDDED_VEHICLE_STACK_RAMMONITOR_H
 #include "Monitor.h"
-
+#include <cstdint>
 
 class RamMonitor: public Monitor {
 public:
     explicit RamMonitor()
-        : ramUsage(0) {
+        : ramUsage_(0) {
     }
 
     void update() override;
-    [[nodiscard]] std::string_view getName() const override;
-    [[nodiscard]] bool isCritical() const override;
+    std::string_view getName() const override;
+    bool isCritical() const override;
     MonitorStatus status() override;
-
-    double getUsage() const override {return ramUsage;}
+    double getUsage() const override {return ramUsage_;}
 
 private:
-    double ramUsage;
+    double ramUsage_;
     std::pair<uint64_t, uint64_t> readMemoryUsage();
 };
 

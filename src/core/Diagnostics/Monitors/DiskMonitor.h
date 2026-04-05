@@ -5,19 +5,18 @@
 #ifndef EMBEDDED_VEHICLE_STACK_DISKMONITOR_H
 #define EMBEDDED_VEHICLE_STACK_DISKMONITOR_H
 #include "Monitor.h"
-
+#include <cstdint>
 
 class DiskMonitor : public Monitor {
 public:
     DiskMonitor();
 
     void update() override;
-    [[nodiscard]] std::string_view getName() const override;
-    [[nodiscard]] bool isCritical() const override;
-    double getUsage() const override {return usagePercent;}
+    std::string_view getName() const override;
+    bool isCritical() const override;
+    double getUsage() const override {return usagePercent_;}
     MonitorStatus status() override;
 
-    double getDiskUsage() const { return usagePercent; }
 private:
     struct DiskUsageInfo {
         uint64_t totalBytes;
@@ -29,7 +28,7 @@ private:
 
 
 private:
-    double usagePercent;
+    double usagePercent_;
 };
 
 
