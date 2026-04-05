@@ -10,21 +10,15 @@
 #include <thread>
 #include <vector>
 
-#include "utils/enums/enums.h"
 #include "core/Diagnostics/Monitors/Monitor.h"
 #include "core/MessageBus/MessageBus.h"
 #include "core/System/Subsystem.h"
 #include "Monitors/CpuMonitor.h"
 #include "Monitors/DiskMonitor.h"
 #include "Monitors/RamMonitor.h"
-#include "core/System/System.h"
 
-// global health of all registered monitors
-enum struct DiagHealth {
-    OK,
-    WARNING,
-    ERROR
-};
+#include "utils/enums/DiagTypes.h"
+
 
 std::string SnapShotToString(const SnapShot&);
 
@@ -49,13 +43,10 @@ public:
     // Subsystem api
     bool start() override;
     bool stop() override;
-    std::string_view name() const override {
-        return "Diagnostics";
-    };
+    std::string_view name() const override { return "Diagnostics"; };
 
     DiagHealth health() const;
     void setDiagFrequency(int frequency);
-    void writeSnapShotToFile();
     SnapShot getSnapShot();
 
     template<typename T>
@@ -67,9 +58,10 @@ public:
 private:
     // class fields
     MessageBus* messageBus_;
-    int diagFrequency;
-    std::vector<std::unique_ptr<Monitor>> monitors_;
     std::atomic<bool> running;
+    int diagFrequency;
+
+    std::vector<std::unique_ptr<Monitor>> monitors_;
     CpuMonitor* cpu_monitor_;
     RamMonitor* ram_monitor_;
     DiskMonitor* disk_monitor_;
@@ -78,7 +70,6 @@ private:
     std::mutex snapShotMutex_;
 
     DiagHealth health_;
-
     std::jthread diagThread;
 
     // methods

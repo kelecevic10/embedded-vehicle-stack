@@ -15,8 +15,7 @@
 
 #include "core/System/Subsystem.h"
 #include "utils/TimeUtils.h"
-#include  "utils/enums/enums.h"
-
+#include "utils/enums/DiagTypes.h"
 
 enum class EventType {
     // System & Lifecycle

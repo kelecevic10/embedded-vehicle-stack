@@ -58,8 +58,6 @@ bool Diagnostics::start() {
         disk_monitor_ = nullptr;
         return false;
     }
-    Logger::info("Diagnostics started!");
-
     return true;
 }
 
@@ -82,6 +80,7 @@ bool Diagnostics::stop() {
     Logger::info("Diagnostics stopped!");
     return true;
 }
+
 /**
  * TODO: Diagnostics Production-Phase Refactoring
  * * 1. [LOGIC] Implement State-Change Detection (Edge-Triggering):
@@ -116,24 +115,29 @@ void Diagnostics::diagnosisLoop() {
         // iterate over all monitors to check system health and collect metrics for the snapshot
         for (const auto& monitor : monitors_) {
             Monitor *m_ptr = monitor.get();
-            m_ptr->update();
+            MonitorStatus status_prev = m_ptr->status();
 
+            m_ptr->update();
             switch (m_ptr->status()) {
                 case MonitorStatus::ERROR:
-                    if (m_ptr->isCritical()) {
+                    if (m_ptr->isCritical())
+                    {
                         health_ = DiagHealth::ERROR;
                         emitEvent(EventType::DIAGNOSTICS_ALERT, m_ptr->getName(), m_ptr->getUsage(), 1);
                     }
                     else
+                    {
                         health_ = (health_ == DiagHealth::ERROR) ? health_ : DiagHealth::WARNING;
-                        if (health_ == DiagHealth::WARNING)
-                            emitEvent(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 5);
+                        emitEvent(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 5);
+                    }
                     break;
                 case MonitorStatus::WARNING:
-                    if (health_ == DiagHealth::OK) {
+                    if (health_ == DiagHealth::OK)
+                    {
                         health_ = DiagHealth::WARNING;
-                        emitEvent(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 1);
                     }
+                    if (status_prev != MonitorStatus::WARNING)
+                        emitEvent(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 1);
                     break;
                 default:
                     break;
@@ -163,6 +167,7 @@ void Diagnostics::buildSnapShot() {
         snapShot_.cpu_usage = cpu_monitor_->getUsage();
         snapShot_.ram_usage = ram_monitor_->getUsage();
         snapShot_.disk_usage = disk_monitor_->getUsage();
+        snapShot_.diag_health = health_;
         snapShot_.timestamp = TimeUtils::get_time_in_ms();
     }
     const Event diagUpdate(
@@ -171,21 +176,6 @@ void Diagnostics::buildSnapShot() {
         10
         );
     messageBus_->publish(std::move(diagUpdate));
-}
-
-void Diagnostics::writeSnapShotToFile() {
-    SnapShot copy {};
-
-    {
-        std::lock_guard<std::mutex> lock(snapShotMutex_);
-        copy = snapShot_;
-    }
-
-    Logger::info(
-        "\n----------------- SNAPSHOT ------------------\n" +
-            SnapShotToString(copy) +
-            "--------------------------------------------\n"
-        );
 }
 
 std::string SnapShotToString(const SnapShot& snap) {
