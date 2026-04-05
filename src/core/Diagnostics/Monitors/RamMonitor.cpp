@@ -15,13 +15,13 @@ void RamMonitor::update() {
     auto [total, available] = readMemoryUsage();
 
     if (total == 0) {
-        monitorStatus = MonitorStatus::ERROR;
-        ramUsage = 0;
+        Logger::error("Could not read RAM usage: total memory used = 0?");
+        ramUsage_ = 0;
         return;
     }
 
-    double used = total - available;
-    ramUsage = used / static_cast<double>(total) * 100;
+    const double used = total - available;
+    ramUsage_ = used / static_cast<double>(total) * 100;
 }
 
 std::string_view RamMonitor::getName() const {
@@ -33,10 +33,10 @@ bool RamMonitor::isCritical() const {
 }
 
 MonitorStatus RamMonitor::status() {
-    if (ramUsage > 90)
+    if (ramUsage_ > 90)
         return MonitorStatus::ERROR;
 
-    if (ramUsage > 70)
+    if (ramUsage_ > 70)
         return MonitorStatus::WARNING;
 
     return MonitorStatus::OK;
@@ -46,7 +46,6 @@ std::pair<uint64_t, uint64_t> RamMonitor::readMemoryUsage() {
     std::ifstream file("/proc/meminfo");
     if (!file.is_open()) {
         Logger::error("Could not open /proc/meminfo");
-        monitorStatus = MonitorStatus::WARNING;
         return {0, 0};
     }
 

@@ -4,6 +4,7 @@
 
 #ifndef EMBEDDED_VEHICLE_STACK_CPUMONITOR_H
 #define EMBEDDED_VEHICLE_STACK_CPUMONITOR_H
+#include <cstdint>
 #include "Monitor.h"
 
 
@@ -28,7 +29,7 @@ public:
     CpuMonitor();
 
     // getter
-    double getCpuUsage() const { return cpuUsage; }
+    double getUsage() const override  { return cpuUsage_; }
 
     // updates monitors internal state
     void update() override;
@@ -46,9 +47,9 @@ private:
     static double computeCpuUsage(const CpuTimes&, const CpuTimes&);
 
     // cpuUsage stats
-    CpuTimes prevTimes {};
-    CpuTimes currTimes {};
-    double cpuUsage = 0;
+    CpuTimes prevTimes_;
+    CpuTimes currTimes_;
+    double cpuUsage_;
 };
 
 

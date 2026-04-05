@@ -11,43 +11,45 @@
 #include "core/Diagnostics/Diagnostics.h"
 #include "utils/logger/Logger.h"
 
-CpuMonitor::CpuMonitor() {
-    this->prevTimes = {};
-    this->currTimes = readCpuTimes();
+CpuMonitor::CpuMonitor() : cpuUsage_()
+{
+    this->prevTimes_ = {};
+    this->currTimes_ = readCpuTimes();
 }
 
 
-void CpuMonitor::update() {
-    prevTimes = currTimes;
-    currTimes = readCpuTimes();
-    cpuUsage = computeCpuUsage(prevTimes, currTimes);
-
-    // Logger::info("CPU usage: " + std::to_string(cpuUsage) + "%");
+void CpuMonitor::update()
+{
+    prevTimes_ = currTimes_;
+    currTimes_ = readCpuTimes();
+    cpuUsage_ = computeCpuUsage(prevTimes_, currTimes_);
 }
 
-std::string_view CpuMonitor::getName() const {
-    return "cpu monitor";
+std::string_view CpuMonitor::getName() const
+{
+    return "CPU Monitor";
 }
 
-bool CpuMonitor::isCritical() const {
+bool CpuMonitor::isCritical() const
+{
     return true;
 }
 
-MonitorStatus CpuMonitor::status() {
-    if (cpuUsage > 85)
-        monitorStatus = MonitorStatus::WARNING;
-    else if (cpuUsage > 95)
+MonitorStatus CpuMonitor::status()
+{
+    if (cpuUsage_ > 90)
         monitorStatus = MonitorStatus::ERROR;
+    else if (cpuUsage_ > 80)
+        monitorStatus = MonitorStatus::WARNING;
     else
         monitorStatus = MonitorStatus::OK;
-
     return monitorStatus;
 }
 
 CpuTimes CpuMonitor::readCpuTimes() {
     std::ifstream file("/proc/stat");
     if (!file.is_open()) {
-        // Logger::error("Could not open /proc/stat");
+        Logger::error("CPU Monitor:: Could not open /proc/stat");
         monitorStatus = MonitorStatus::ERROR;
         return {};
     }

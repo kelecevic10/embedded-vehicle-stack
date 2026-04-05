@@ -10,6 +10,7 @@
 #include <string>
 #include <iostream>
 #include "Subsystem.h"
+#include "core/MessageBus/MessageBus.h"
 
 enum class SystemState {
     Initializing,       // initializing the system
@@ -60,9 +61,11 @@ public:
 
     // getters
     SystemState getState() const { return state_; }
+    MessageBus* getBus() const { return bus_.get(); }
 private:
 
     SystemState state_;
+    std::unique_ptr<MessageBus> bus_;
     std::vector<std::unique_ptr<Subsystem>> subsystems_;
 
 
