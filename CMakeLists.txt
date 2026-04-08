@@ -4,12 +4,19 @@ project(embedded-vehicle-stack)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# add source dir
-include_directories(src)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GPIOD REQUIRED IMPORTED_TARGET libgpiodcxx)
 
-# recursively collect all .cpp files inside src/
-file (GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
-    "src/*.cpp"
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
+        "src/*.cpp"
 )
 
 add_executable(embedded-vehicle-stack ${SRC_FILES})
+
+target_include_directories(embedded-vehicle-stack PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(embedded-vehicle-stack PRIVATE
+        PkgConfig::GPIOD
+)
