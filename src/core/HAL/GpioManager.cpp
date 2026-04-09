@@ -22,7 +22,7 @@ namespace hal {
 
         gpiod::line::bias toGpiodBias(const PinBias bias) {
             switch (bias) {
-                case PinBias::NONE:
+                case PinBias::AS_IS:
                     return gpiod::line::bias::AS_IS;
                 case PinBias::PULL_UP:
                     return gpiod::line::bias::PULL_UP;
@@ -43,11 +43,9 @@ GpioManager::GpioManager(std::string chipPath)
 
 }
 
-GpioManager::~GpioManager() {
+GpioManager::~GpioManager()
+{
     releaseAllPins();
-    if (chip_) {
-        chip_.close();
-    }
 }
 
 bool GpioManager::claimPin(const InputPinConfig& config) {
@@ -127,15 +125,22 @@ void GpioManager::releasePin(unsigned int pin) {
     if (it == claimedPins_.end()) {
         return;
     }
+
     try {
-        gpiod::line_request& line_request = it->second.request;
-        if (line_request) {
-            line_request.release();
+        gpiod::line_request& lineRequest = it->second.request;
+        if (!lineRequest) {
+            Logger::warning(std::format(
+                "Pin {} is tracked in claimedPins_, but its line_request is invalid",
+                pin
+            ));
+        } else {
+            lineRequest.release();
         }
-    } catch (...) {
-        Logger::warning(std::format("Could not release pin {}", pin));
+        claimedPins_.erase(it);
+    } catch (std::exception& e) {
+        claimedPins_.erase(it);
+        throw std::runtime_error(std::format("Could not release pin {}, exception: {}", pin, e.what()));
     }
-    claimedPins_.erase(it);
 }
 
 void GpioManager::releaseAllPins() {
@@ -147,7 +152,11 @@ void GpioManager::releaseAllPins() {
     }
 
     for (const auto& pin : pins) {
-        releasePin(pin);
+        try {
+            releasePin(pin);
+        } catch (const std::exception& e) {
+            Logger::warning(std::format("Could not release pin {}, exception: {}", pin, e.what()));
+        }
     }
 
     claimedPins_.clear();
@@ -160,6 +169,7 @@ bool GpioManager::write(unsigned int pin, PinState value) {
     }
 
     if (claimedPin->direction != PinDirection::OUTPUT) {
+        Logger::warning(std::format("Cannot write to pin {} because it is not an output", pin));
         return false;
     }
 
@@ -201,21 +211,21 @@ bool GpioManager::isClaimed(const unsigned int pin) const {
     return claimedPins_.contains(pin);
 }
 
-std::optional<PinDirection> GpioManager::getPinDirection(unsigned int pin) const {
-    const auto* claimedPin = findPin(pin);
+std::optional<PinDirection> GpioManager::getPinDirection(unsigned int pin) {
+    auto* claimedPin = findPin(pin);
     if (claimedPin == nullptr) {
         return std::nullopt;
     }
     return claimedPin->direction;
 }
 
-const GpioManager::ClaimedPin *GpioManager::findPin(unsigned int pin) const {
-    const auto it = claimedPins_.find(pin);
-    if (it == claimedPins_.end()) {
-        return nullptr;
-    }
-    return &it->second;
-}
+// const GpioManager::ClaimedPin *GpioManager::findPin(unsigned int pin) const {
+//     const auto it = claimedPins_.find(pin);
+//     if (it == claimedPins_.end()) {
+//         return nullptr;
+//     }
+//     return &it->second;
+// }
 
 GpioManager::ClaimedPin * GpioManager::findPin(unsigned int pin) {
     const auto it = claimedPins_.find(pin);

@@ -23,7 +23,7 @@ namespace hal {
     };
 
     enum class PinBias {
-        NONE,
+        AS_IS,
         PULL_UP,
         PULL_DOWN
     };
@@ -39,7 +39,7 @@ namespace hal {
         unsigned int pin;
         std::string consumer;
         bool activeLow {false};
-        PinBias bias {PinBias::NONE};
+        PinBias bias {PinBias::AS_IS};
     };
 
     class GpioManager {
@@ -64,7 +64,7 @@ namespace hal {
         const std::string& chipPath() const;
         std::size_t claimedPinCount() const;
         bool isClaimed(unsigned int pin) const;
-        std::optional<PinDirection> getPinDirection(unsigned int pin) const;
+        std::optional<PinDirection> getPinDirection(unsigned int pin);
 
     private:
         struct ClaimedPin {
@@ -73,7 +73,8 @@ namespace hal {
             std::string consumer;
             gpiod::line_request request;
         };
-        const ClaimedPin* findPin(unsigned int pin) const;
+
+        // const ClaimedPin* findPin(unsigned int pin) const;
         ClaimedPin* findPin(unsigned int pin);
 
         std::string chipPath_;
