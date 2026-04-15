@@ -31,7 +31,6 @@ enum class EventType {
 using EventPayload = std::variant<
     std::monostate,   // empty, signal only
     std::string,
-    std::string_view,
     int,
     SnapShot
 >;
