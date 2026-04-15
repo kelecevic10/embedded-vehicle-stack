@@ -6,8 +6,9 @@
 
 #include "utils/logger/Logger.h"
 
+using hal::PinState;
 bool LED::turnOn() const {
-    if (this->write(hal::PinState::HIGH)) {
+    if (write(PinState::HIGH)) {
         return true;
     }
     Logger::error("Failed to turn on LED");
@@ -15,7 +16,7 @@ bool LED::turnOn() const {
 }
 
 bool LED::turnOff() const {
-    if (this->write(hal::PinState::LOW)) {
+    if (write(PinState::LOW)) {
         return true;
     }
     Logger::error("Failed to turn off LED");

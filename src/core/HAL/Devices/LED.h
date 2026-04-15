@@ -8,14 +8,15 @@
 #include <gpiod.hpp>
 
 #include "utils/logger/Logger.h"
+using hal::GpioManager; using hal::OutputPinConfig;
 
 class LED : public Actuator {
 public:
     LED(
         const unsigned int pin,
         std::string name,
-        hal::GpioManager* gpioManager,
-        hal::OutputPinConfig config
+        GpioManager* gpioManager,
+        OutputPinConfig config
         )
         : Actuator(pin, std::move(name), gpioManager, std::move(config))
     {
