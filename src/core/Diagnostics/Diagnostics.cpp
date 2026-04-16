@@ -49,6 +49,11 @@ bool Diagnostics::start() {
     try {
         running = true;
         diagThread = std::jthread(&Diagnostics::diagnosisLoop, this);
+        this->startEventLoop();
+        // HERE goes the list of specific event types
+        // eg. this->subscribe(Event_type::some_event, this)
+        // this->subscribe(Event_type::some_event_2, this)
+        // ...
     } catch (const std::system_error &e) {
         Logger::error(std::format("Failed to create diagnostics thread: {}", e.what()));
         running = false;
@@ -71,6 +76,9 @@ bool Diagnostics::stop() {
     if (diagThread.joinable()) {
         diagThread.join();
     }
+
+    // HERE goes the reversed list of the unsubscribed calls
+    this->stopEventLoop();
 
     monitors_.clear();
     cpu_monitor_ = nullptr;
@@ -123,12 +131,12 @@ void Diagnostics::diagnosisLoop() {
                     if (m_ptr->isCritical())
                     {
                         health_ = DiagHealth::ERROR;
-                        emitEvent(EventType::DIAGNOSTICS_ALERT, m_ptr->getName(), m_ptr->getUsage(), 1);
+                        emitMonitorUpdate(EventType::DIAGNOSTICS_ALERT, m_ptr->getName(), m_ptr->getUsage(), 1);
                     }
                     else
                     {
                         health_ = (health_ == DiagHealth::ERROR) ? health_ : DiagHealth::WARNING;
-                        emitEvent(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 5);
+                        emitMonitorUpdate(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 5);
                     }
                     break;
                 case MonitorStatus::WARNING:
@@ -137,7 +145,7 @@ void Diagnostics::diagnosisLoop() {
                         health_ = DiagHealth::WARNING;
                     }
                     if (status_prev != MonitorStatus::WARNING)
-                        emitEvent(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 1);
+                        emitMonitorUpdate(EventType::DIAGNOSTICS_WARNING, m_ptr->getName(), m_ptr->getUsage(), 1);
                     break;
                 default:
                     break;
@@ -151,6 +159,10 @@ void Diagnostics::diagnosisLoop() {
         next += std::chrono::milliseconds(diagFrequency);
         std::this_thread::sleep_until(next);
     }
+}
+
+void Diagnostics::registerHandlers() {
+    // no events to subscribe to yet
 }
 
 DiagHealth Diagnostics::health() const {
@@ -170,12 +182,14 @@ void Diagnostics::buildSnapShot() {
         snapShot_.diag_health = health_;
         snapShot_.timestamp = TimeUtils::get_time_in_ms();
     }
-    const Event diagUpdate(
+
+    Event diagUpdate(
         EventType::DIAGNOSTICS_UPDATE,
         snapShot_,
         10
         );
-    messageBus_->publish(std::move(diagUpdate));
+
+    publish(std::move(diagUpdate));
 }
 
 std::string SnapShotToString(const SnapShot& snap) {
@@ -191,7 +205,7 @@ SnapShot Diagnostics::getSnapShot() {
     return snapShot_;
 }
 
-void Diagnostics::emitEvent(const EventType t, std::string_view monitor_name, double usage, int priority) const {
+void Diagnostics::emitMonitorUpdate(const EventType t, std::string_view monitor_name, double usage, int priority) const {
     const Event event(t, std::format("{}: usage {}%", monitor_name, usage), priority);
-    messageBus_->publish(event);
+    publish(std::move(event));
 }

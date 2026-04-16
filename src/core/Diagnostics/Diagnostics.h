@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/Diagnostics/Monitors/Monitor.h"
+#include "core/Event/EventProcessor.h"
 #include "core/MessageBus/MessageBus.h"
 #include "core/System/Subsystem.h"
 #include "Monitors/CpuMonitor.h"
@@ -22,10 +23,10 @@
 
 std::string SnapShotToString(const SnapShot&);
 
-class Diagnostics : public Subsystem {
+class Diagnostics : public Subsystem, public EventProcessor {
 public:
     Diagnostics(MessageBus* bus)
-        : messageBus_(bus),
+        : EventProcessor(bus),
         diagFrequency(3000),
         monitors_{},
         running(false),
@@ -36,6 +37,7 @@ public:
         health_(DiagHealth::OK)
     {
         initMonitors();
+        registerHandlers();
     }
 
     ~Diagnostics() override;
@@ -44,6 +46,11 @@ public:
     bool start() override;
     bool stop() override;
     std::string_view name() const override { return "Diagnostics"; };
+
+    // EventProcessor api
+    // subscribe all handlers using subscription method
+    // NOTE: call it in a derived class constructor before the startEventLoop()
+    void registerHandlers() override;
 
     DiagHealth health() const;
     void setDiagFrequency(int frequency);
@@ -57,7 +64,6 @@ public:
     }
 private:
     // class fields
-    MessageBus* messageBus_;
     std::atomic<bool> running;
     int diagFrequency;
 
@@ -76,7 +82,7 @@ private:
     void diagnosisLoop();
     void buildSnapShot();
     void initMonitors();
-    void emitEvent(EventType, std::string_view, double, int) const;
+    void emitMonitorUpdate(EventType, std::string_view, double, int) const;
 };
 
 
