@@ -82,9 +82,9 @@ void MessageBus::loop()
 void MessageBus::subscribe(const EventType event, EventProcessor* subscriber)
 {
     std::lock_guard lock(mutex_);
-    if (!subscribers_.contains(event)) {
+    auto& subs = subscribers_[event];
+    if (std::find(subs.begin(), subs.end(), subscriber) == subs.end())
         subscribers_[event].push_back(subscriber);
-    }
 }
 
 void MessageBus::unsubscribe(EventType event, EventProcessor *subscriber) {

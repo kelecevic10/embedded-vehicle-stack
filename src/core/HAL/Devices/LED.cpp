@@ -6,7 +6,6 @@
 
 #include "utils/logger/Logger.h"
 
-using hal::PinState;
 bool LED::turnOn() const {
     if (write(PinState::HIGH)) {
         return true;

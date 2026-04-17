@@ -8,23 +8,31 @@
 
 #include "core/Diagnostics/Diagnostics.h"
 #include "utils/logger/Logger.h"
-
+#include "core/HAL/HAL.h"
 
 void System::init() {
     state_ = SystemState::Initializing;
 
     bus_ = std::make_unique<MessageBus>();
-    subsystems_.push_back(std::make_unique<Diagnostics>(bus_.get()));
+    try {
+        subsystems_.push_back(std::make_unique<HAL>(bus_.get(), "/dev/gpiochip0"));
+        subsystems_.push_back(std::make_unique<Diagnostics>(bus_.get()));
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Could not create HAL subsystem: {}", e.what()));
+        state_ = SystemState::Faulted;
+        return;
+    }
     // check if the creation of all subsystems is correct; in opposite, go to the faulted state
     // currently, there is no subsystem that can fail in creation stage
-
+    // note: creation of HAL can throw exception -> catch it here
     state_ = SystemState::Initialized;
     Logger::info("System initialized!");
 }
 
 System::~System() {
     try {
-        if (state_ != SystemState::Stopped) stop();
+        if (state_ != SystemState::Stopped)
+            stop();
     } catch (std::exception& e) {
         Logger::error(std::format("Critical: System destructor failed to shut down gracefully.\n Error: {}", e.what()));
     }

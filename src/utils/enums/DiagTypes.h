@@ -17,6 +17,7 @@ enum struct DiagHealth {
     ERROR
 };
 
+
 inline std::string_view toString(const DiagHealth health) {
     switch (health) {
         case DiagHealth::OK: return "OK";
@@ -45,8 +46,8 @@ struct SnapShot {
 inline std::string SnapShotToString(const SnapShot& snap) {
     std::string time_str = TimeUtils::format_time(snap.timestamp);
     return std::format(
-        "CPU: {:.2f}\nRAM: {:.2f}\nDISK: {:.2f}\nTime: {}\n",
-        snap.cpu_usage, snap.ram_usage, snap.disk_usage, time_str
+        "CPU: {:.2f}\nRAM: {:.2f}\nDISK: {:.2f}\nDIAG HEALTH: {}\nTime: {}\n",
+        snap.cpu_usage, snap.ram_usage, snap.disk_usage, toString(snap.diag_health), time_str
         );
 }
 

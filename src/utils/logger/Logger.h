@@ -54,7 +54,7 @@ public:
 
         bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
         bus_->subscribe(EventType::DIAGNOSTICS_WARNING, this);
-        // bus_->subscribe(EventType::DIAGNOSTICS_ALERT, this);
+        bus_->subscribe(EventType::DIAGNOSTICS_ALERT, this);
         // bus_->subscribe(EventType::SYSTEM_SHUTDOWN, this);
     };
 
@@ -62,21 +62,27 @@ public:
     {
         bus_->unsubscribe(EventType::DIAGNOSTICS_UPDATE, this);
         bus_->unsubscribe(EventType::DIAGNOSTICS_WARNING, this);
-        // bus_->unsubscribe(EventType::DIAGNOSTICS_ALERT, this);
+        bus_->unsubscribe(EventType::DIAGNOSTICS_ALERT, this);
         // bus_->unsubscribe(EventType::SYSTEM_SHUTDOWN, this);
 
         // the base class EventProcessor destructor calls stopEventLoop()
         // stopEventLoop();
     };
 
-    inline void registerHandlers() override {
+    void registerHandlers() override {
         subscribe(EventType::DIAGNOSTICS_UPDATE, [](const Event& e) {
             const auto snapshot = std::get<SnapShot>(e.payload);
-            info(formatLog(LogType::INFO, SnapShotToString(snapshot)));
+            info(std::format("Diagnostics update\n{}", SnapShotToString(snapshot)));
         });
 
         subscribe(EventType::DIAGNOSTICS_WARNING, [](const Event& e) {
-            warning("WARNING OCCURRED, TODO: process the infos from Event object");
+            const auto message = std::get<std::string>(e.payload);
+            warning(message);
+        });
+
+        subscribe(EventType::DIAGNOSTICS_ALERT, [](const Event& e) {
+            const auto message = std::get<std::string>(e.payload);
+            error(message);
         });
     };
 

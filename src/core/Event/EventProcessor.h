@@ -13,6 +13,43 @@
 
 #include "Event.h"
 
+// EventProcessor usage model:
+// -----------------------------------------------------------------
+// 1. Inherit EventProcessor in every module that should participate
+//    in the event system (as publisher, listener, or both).
+//
+// 2. Pass MessageBus* to the EventProcessor base constructor.
+//
+// 3. Implement registerHandlers() in the derived class.
+//    This method should only register local handlers via subscribe().
+//    It is called once during object construction, before the event loop starts.
+//
+// 4. Start the event loop before the module begins receiving events.
+//    The event loop runs in its own thread and processes incoming events
+//    from the local priority queue.
+//
+// 5. Subscribe the module to MessageBus for every EventType it should listen to.
+//
+// 6. To publish an event, create a local Event object and call publish(...).
+//    EventProcessor will move it into a shared EventPtr and forward it to MessageBus.
+//
+// 7. MessageBus routes the same immutable event instance to all subscribed
+//    EventProcessor listeners. Each listener receives it through emitEvent(),
+//    which pushes it into its local queue.
+//
+// 8. The EventProcessor worker thread waits for queued events, pops them
+//    in priority order, finds matching handlers, and executes them.
+//
+// 9. On shutdown, always unsubscribe the module from MessageBus before destruction,
+//    then stop the event loop so no dangling listener pointers remain in the bus.
+//
+// In short:
+// - subscribe(...)   -> register local handler functions
+// - publish(...)     -> send event to MessageBus
+// - emitEvent(...)   -> MessageBus injects event into local queue
+// - startEventLoop() -> start listener thread
+// - stopEventLoop()  -> stop listener thread
+
 class MessageBus;
 
 using EventQueue = std::priority_queue

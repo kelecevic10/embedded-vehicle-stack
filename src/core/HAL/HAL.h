@@ -10,10 +10,11 @@
 #include "core/MessageBus/MessageBus.h"
 #include "core/System/Subsystem.h"
 #include "Devices/Device.h"
+#include "Devices/LED.h"
 
 using hal::GpioManager;
 
-class HAL : Subsystem {
+class HAL : public Subsystem, public EventProcessor {
 public:
 
     HAL(MessageBus* msg, std::string chip_path);
@@ -23,14 +24,36 @@ public:
     bool stop() override;
     std::string_view name() const override;
 
+    template <typename T, typename... Args>
+    T* createDevice(Args&&... args) {
+        static_assert(std::is_base_of_v<Device, T>, "T must derive from Device");
+        try {
+            auto device = std::make_unique<T>(std::forward<Args>(args)...);
+            T* rawPtr = device.get();
+            devices_.push_back(std::move(device));
+            return rawPtr;
+        } catch (std::exception& e) {
+            Logger::error(std::format("Could not create device: {}", e.what()));
+            return nullptr;
+        }
+    }
+
+    void registerHandlers() override;
+
     // TODO: router logic (public & listen to events)
 private:
     std::jthread thread_;
-    MessageBus* messageBus_;
+    std::atomic<bool> running_;
     std::unique_ptr<GpioManager> gpioManager_;
     std::vector<std::unique_ptr<Device>> devices_;
 
     bool registerDevices();
+
+    LED* greenLed = nullptr;
+    LED* redLed = nullptr;
+    LED* yellowLed = nullptr;
+    LED* activeDiagLed = nullptr;
+
     void loop();
 };
 
