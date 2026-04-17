@@ -192,13 +192,6 @@ void Diagnostics::buildSnapShot() {
     publish(std::move(diagUpdate));
 }
 
-std::string SnapShotToString(const SnapShot& snap) {
-    std::string time_str = TimeUtils::format_time(snap.timestamp);
-    return std::format(
-        "CPU: {:.2f}\nRAM: {:.2f}\nDISK: {:.2f}\nTime: {}\n",
-        snap.cpu_usage, snap.ram_usage, snap.disk_usage, time_str
-        );
-}
 
 SnapShot Diagnostics::getSnapShot() {
     std::lock_guard lock(snapShotMutex_);

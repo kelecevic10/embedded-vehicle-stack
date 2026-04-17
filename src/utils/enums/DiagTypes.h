@@ -5,8 +5,12 @@
 #ifndef EMBEDDED_VEHICLE_STACK_ENUMS_H
 #define EMBEDDED_VEHICLE_STACK_ENUMS_H
 #include <cstdint>
+#include <format>
 #include <iostream>
 #include <string>
+
+#include "utils/TimeUtils.h"
+
 enum struct DiagHealth {
     OK,
     WARNING,
@@ -38,5 +42,12 @@ struct SnapShot {
 };
 
 
+inline std::string SnapShotToString(const SnapShot& snap) {
+    std::string time_str = TimeUtils::format_time(snap.timestamp);
+    return std::format(
+        "CPU: {:.2f}\nRAM: {:.2f}\nDISK: {:.2f}\nTime: {}\n",
+        snap.cpu_usage, snap.ram_usage, snap.disk_usage, time_str
+        );
+}
 
 #endif //EMBEDDED_VEHICLE_STACK_ENUMS_H

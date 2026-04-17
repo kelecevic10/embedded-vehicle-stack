@@ -3,10 +3,11 @@
 //
 
 # pragma once
-#include <cstdint>
 #include <memory>
 #include <vector>
 #include "Sink.h"
+#include "core/Event/EventProcessor.h"
+#include "core/MessageBus/MessageBus.h"
 
 
 enum class LogType : uint8_t {
@@ -41,10 +42,43 @@ inline std::string_view logTypeToColor(LogType type) {
     return TextColor::RESET;
 }
 
-class Logger {
+class Logger : public EventProcessor {
 public:
-    Logger() = default;
-    ~Logger() = default;
+    Logger(MessageBus* bus_)
+        : EventProcessor(bus_)
+    {
+
+        Logger::registerHandlers();
+
+        startEventLoop();
+
+        bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
+        bus_->subscribe(EventType::DIAGNOSTICS_WARNING, this);
+        // bus_->subscribe(EventType::DIAGNOSTICS_ALERT, this);
+        // bus_->subscribe(EventType::SYSTEM_SHUTDOWN, this);
+    };
+
+    ~Logger() override
+    {
+        bus_->unsubscribe(EventType::DIAGNOSTICS_UPDATE, this);
+        bus_->unsubscribe(EventType::DIAGNOSTICS_WARNING, this);
+        // bus_->unsubscribe(EventType::DIAGNOSTICS_ALERT, this);
+        // bus_->unsubscribe(EventType::SYSTEM_SHUTDOWN, this);
+
+        // the base class EventProcessor destructor calls stopEventLoop()
+        // stopEventLoop();
+    };
+
+    inline void registerHandlers() override {
+        subscribe(EventType::DIAGNOSTICS_UPDATE, [](const Event& e) {
+            const auto snapshot = std::get<SnapShot>(e.payload);
+            info(formatLog(LogType::INFO, SnapShotToString(snapshot)));
+        });
+
+        subscribe(EventType::DIAGNOSTICS_WARNING, [](const Event& e) {
+            warning("WARNING OCCURRED, TODO: process the infos from Event object");
+        });
+    };
 
     static void info(std::string_view);
     static void warning(std::string_view);
@@ -55,7 +89,7 @@ public:
 
     static void setDefaultLogFolder(const std::string&);
     static const std::string& getDefaultLogFolder();
-    static std::string buildLogFilePath(std::string_view);
+
 
 private:
     static std::string formatLog(LogType, std::string_view);

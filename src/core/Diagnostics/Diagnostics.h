@@ -17,11 +17,7 @@
 #include "Monitors/CpuMonitor.h"
 #include "Monitors/DiskMonitor.h"
 #include "Monitors/RamMonitor.h"
-
 #include "utils/enums/DiagTypes.h"
-
-
-std::string SnapShotToString(const SnapShot&);
 
 class Diagnostics : public Subsystem, public EventProcessor {
 public:
