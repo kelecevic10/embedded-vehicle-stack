@@ -7,3 +7,7 @@ ECU-car.iml
 editor.xml
 .idea
 docs.odt
+cmake-build-debug-local/
+cmake-build-debug-raspberrypi/
+cmake-build-debug-localraspberrypi/
+cmake-build-raspberrypi/
