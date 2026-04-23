@@ -118,7 +118,7 @@ bool HAL::stop() {
 
 HAL::~HAL() {
     if (running_.load()) {
-        stop();
+        HAL::stop();
     }
     if (activeDiagLed != nullptr)
         activeDiagLed->turnOff();
