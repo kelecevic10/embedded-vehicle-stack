@@ -21,6 +21,13 @@ enum class EventType {
     DIAGNOSTICS_UPDATE,
     DIAGNOSTICS_WARNING,
     DIAGNOSTICS_ALERT,
+
+    // Camera
+    CAMERA_TAKE_SNAPSHOT,
+    CAMERA_START_RECORDING,
+    CAMERA_STOP_RECORDING,
+    CAMERA_START_PREVIEW,
+    CAMERA_STOP_PREVIEW,
 };
 
 inline std::string EventTypeToString(const EventType t) {
