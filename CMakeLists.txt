@@ -1,3 +1,4 @@
+
 cmake_minimum_required(VERSION 3.22)
 project(embedded-vehicle-stack)
 
@@ -15,8 +16,12 @@ add_executable(embedded-vehicle-stack ${SRC_FILES})
 
 target_include_directories(embedded-vehicle-stack PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        /usr/include/libcamera
 )
 
 target_link_libraries(embedded-vehicle-stack PRIVATE
         PkgConfig::GPIOD
+        camera
+        camera-base
+
 )
