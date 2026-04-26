@@ -60,9 +60,9 @@ bool Camera::start() {
     }
 
     backend_.setFrameCallback([this](const FrameData& frame) {
-        // if (frame.sequenceNumber % 30 != 0) {
-        //     return;
-        // }
+        if (frame.sequenceNumber % 30 != 0) {
+            return;
+        }
 
         Logger::info(
             std::format(
@@ -225,7 +225,7 @@ void Camera::workerLoop() {
             lock.lock();
             if (!previewOk) {
                 Logger::error("Camera: error while previewing");
-                // all the possible falses can possibly spawn from backend issues
+                // all the possible falses can spawn from backend issues only
                 // they are handled already through setErrorHandler()
                 // where error msg is logged and state is updated
             } else {

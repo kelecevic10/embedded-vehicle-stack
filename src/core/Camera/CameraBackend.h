@@ -17,7 +17,6 @@ using Stream = libcamera::Stream;
 using FrameBufferAllocator = libcamera::FrameBufferAllocator;
 using Request = libcamera::Request;
 using FrameBuffer = libcamera::FrameBuffer;
-// using Camera = libcamera::Camera;
 using CameraConfiguration = libcamera::CameraConfiguration;
 
 struct FramePlaneView {

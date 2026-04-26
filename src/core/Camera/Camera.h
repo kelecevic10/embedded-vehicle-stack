@@ -9,25 +9,6 @@
 #include "core/System/Subsystem.h"
 #include <ostream>
 
-// Uninitialized
-//     |
-//     v
-// Initializing -----> Faulted
-//     |
-//     v
-//    Idle ---------> Faulted
-//    |  \
-//    |   \
-//    v    v
-// Previewing   Recording   (+ idle moze u stopping)
-//     |            |
-//     v            v
-//    Stopping ------
-//       |
-//       v
-//      Idle
-//
-// Faulted -> Initializing
 
 enum class CameraState {
     Uninitialized,                  // equivalent to stopped
@@ -84,10 +65,12 @@ private:
     // since both the worker and listener camera threads update/read them
     std::mutex cameraMutex_;
     std::condition_variable workerCv_;
-    CameraState currentState_;
-    CameraState requestedState_;
     bool takeSnapShot_;
     CameraBackend backend_;
+
+    CameraState currentState_;
+    CameraState requestedState_;
+
     // methods
     static bool canTransition(const CameraState& from, const CameraState& to);
     void updateState(const CameraState& to);

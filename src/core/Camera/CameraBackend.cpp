@@ -105,8 +105,8 @@ bool CameraBackend::configureFromSpec(const CameraConfigSpec& spec) {
         return false;
     }
 
-    const libcamera::CameraConfiguration::Status validationStatus = configuration->validate();
-    if (validationStatus == libcamera::CameraConfiguration::Invalid) {
+    const CameraConfiguration::Status validationStatus = configuration->validate();
+    if (validationStatus == CameraConfiguration::Invalid) {
         reportError("Camera configuration is invalid");
         return false;
     }
