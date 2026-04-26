@@ -53,8 +53,44 @@ bool Camera::start() {
         return false;
     }
 
-    updateState(CameraState::Initializing);
-    requestedState_ = CameraState::Idle;
+    {
+        std::lock_guard lock(cameraMutex_);
+        updateState(CameraState::Initializing);
+        requestedState_ = CameraState::Idle;
+    }
+
+    backend_.setFrameCallback([this](const FrameData& frame) {
+        // if (frame.sequenceNumber % 30 != 0) {
+        //     return;
+        // }
+
+        Logger::info(
+            std::format(
+           "Camera frame received! {}: {}",
+                   frame.sequenceNumber,
+                   frame.timestampNs
+                   ));
+    });
+
+    backend_.setErrorCallback([this](const std::string& error) {
+        Logger::error(std::format("Camera error: {}", error));
+        std::scoped_lock lock(cameraMutex_);
+        updateState(CameraState::Faulted);
+        requestedState_ = CameraState::Faulted;
+    });
+
+    if (!backend_.initialize()) {
+        std::scoped_lock lock(cameraMutex_);
+        updateState(CameraState::Faulted);
+        requestedState_ = CameraState::Faulted;
+        return false;
+    }
+
+    {
+        std::lock_guard lock(cameraMutex_);
+        updateState(CameraState::Idle);
+        requestedState_ = CameraState::Idle;
+    }
 
     // start the worker thread
     running_.store(true);
@@ -70,7 +106,6 @@ bool Camera::start() {
     bus_->subscribe(EventType::CAMERA_START_PREVIEW, this);
     bus_->subscribe(EventType::CAMERA_STOP_PREVIEW, this);
 
-    updateState(CameraState::Idle);
     return true;
 }
 
@@ -80,10 +115,11 @@ bool Camera::stop() {
         return true;
     }
 
-    updateState(CameraState::Stopping);
-    cameraMutex_.lock();
-    requestedState_ = CameraState::Uninitialized;
-    cameraMutex_.unlock();
+    {
+        std::lock_guard lock(cameraMutex_);
+        updateState(CameraState::ShuttingDown);
+        requestedState_ = CameraState::ShuttingDown;
+    }
 
     stopEventLoop();
     bus_->unsubscribe(EventType::CAMERA_TAKE_SNAPSHOT, this);
@@ -98,7 +134,13 @@ bool Camera::stop() {
         workerThread_.join();
     }
 
-    updateState(CameraState::Uninitialized);
+    backend_.shutdown();
+
+    {
+        std::lock_guard lock(cameraMutex_);
+        requestedState_ = CameraState::Uninitialized;
+        updateState(CameraState::Uninitialized);
+    }
 
     return true;
 }
@@ -118,27 +160,33 @@ bool Camera::canTransition(const CameraState &from, const CameraState &to) {
         case CameraState::Idle:
             return to == CameraState::Previewing ||
                    to == CameraState::Recording ||
-                   to == CameraState::Faulted;
+                   to == CameraState::Faulted ||
+                   to == CameraState::ShuttingDown;
 
         case CameraState::Previewing:
         case CameraState::Recording:
             return to == CameraState::Stopping ||
-                   to == CameraState::Faulted;
+                   to == CameraState::Faulted ||
+                   to == CameraState::ShuttingDown ||
+                   to == CameraState::Idle;
 
         case CameraState::Stopping:
             return to == CameraState::Idle ||
-                   to == CameraState::Faulted;
+                   to == CameraState::Faulted ||
+                   to == CameraState::ShuttingDown;
 
         case CameraState::Faulted:
-            return to == CameraState::Initializing;
+            return to == CameraState::Initializing || to == CameraState::ShuttingDown;
+        case CameraState::ShuttingDown:
+            return to == CameraState::Uninitialized || to == CameraState::Faulted;
     }
 
     return false;
 }
 
+// caller must lock the mutex before a call
 void Camera::updateState(const CameraState &to) {
     if (canTransition(currentState_, to)) {
-        std::scoped_lock lock(cameraMutex_);
         currentState_ = to;
     } else {
         Logger::error(std::format("Camera: Cannot transition from {} to {}", toString(currentState_), toString(to)));
@@ -163,47 +211,74 @@ void Camera::workerLoop() {
             takeSnapShot_ = false;
             lock.unlock();
             if (!takeSnapShot()) {
-                updateState(CameraState::Faulted);
-                requestedState_ = CameraState::Faulted;
+                Logger::error("Camera: could not take snapshot");
+            } else {
+                Logger::info("Camera: snapshot taken!");
             }
-
-            updateState(CameraState::Idle);
-            requestedState_ = CameraState::Idle;
+            lock.lock();
         }
 
         if (requestedState_ == CameraState::Previewing) {
-            lock.unlock();
-            if (!startPreview()) {
-                updateState(CameraState::Faulted);
-                lock.lock();
-                requestedState_ = CameraState::Faulted;
-            }
             updateState(CameraState::Previewing);
+            lock.unlock();
+            const bool previewOk = runPreview();
             lock.lock();
-            requestedState_ = CameraState::Previewing;
+            if (!previewOk) {
+                Logger::error("Camera: error while previewing");
+                // all the possible falses can possibly spawn from backend issues
+                // they are handled already through setErrorHandler()
+                // where error msg is logged and state is updated
+            } else {
+                requestedState_ == CameraState::ShuttingDown ?
+                    updateState(CameraState::ShuttingDown) :
+                    updateState(CameraState::Idle);
+            }
         }
 
         if (requestedState_ == CameraState::Recording) {
-            lock.unlock();
-            if (!startRecording()) {
-                updateState(CameraState::Faulted);
-                lock.lock();
-                requestedState_ = CameraState::Faulted;
-            }
             updateState(CameraState::Recording);
-            lock.lock();
             requestedState_ = CameraState::Recording;
+            // lock.unlock();
+            // TODO: call preview, check its returning status, lock mutexes, update states
         }
     }
 }
 
+// all these functions must periodically check if they should run
 bool Camera::takeSnapShot() {
-
+    // TODO: implement backend handler captureSnapShot()
+    return true;
 }
 
-bool Camera::startPreview() {
+bool Camera::runPreview() {
+    if (!backend_.configureForPreview()) {
+        return false;
+    }
+
+    // this actually starts the whole process; we should leave it enough time
+    // to work until we call stopCapture() here
+    if (!backend_.startCapture()) {
+        return false;
+    }
+
+    while (running_.load()) {
+        {
+            std::scoped_lock lock(cameraMutex_);
+            if (requestedState_ != CameraState::Previewing) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    if (!backend_.stopCapture()) {
+        return false;
+    }
+
+    return true;
 }
 
-bool Camera::startRecording() {
+bool Camera::runRecording() {
+    return true;
 }
 

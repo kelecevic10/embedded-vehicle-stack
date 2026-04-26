@@ -6,6 +6,7 @@
 
 #include <format>
 
+#include "core/Camera/Camera.h"
 #include "core/Diagnostics/Diagnostics.h"
 #include "utils/logger/Logger.h"
 #include "core/HAL/HAL.h"
@@ -17,6 +18,7 @@ void System::init() {
     try {
         subsystems_.push_back(std::make_unique<HAL>(bus_.get(), "/dev/gpiochip0"));
         subsystems_.push_back(std::make_unique<Diagnostics>(bus_.get()));
+        subsystems_.push_back(std::make_unique<Camera>(bus_.get()));
     } catch (const std::exception& e) {
         Logger::error(std::format("Could not create HAL subsystem: {}", e.what()));
         state_ = SystemState::Faulted;

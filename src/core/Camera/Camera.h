@@ -4,8 +4,10 @@
 
 #ifndef EMBEDDED_VEHICLE_STACK_CAMERA_H
 #define EMBEDDED_VEHICLE_STACK_CAMERA_H
+#include "CameraBackend.h"
 #include "core/Event/EventProcessor.h"
 #include "core/System/Subsystem.h"
+#include <ostream>
 
 // Uninitialized
 //     |
@@ -33,8 +35,9 @@ enum class CameraState {
     Idle,                           // Initialized & doesn't do anything
     Previewing,
     Recording,
-    Stopping,                       // Stoping whatever (previewing, recording)
-    Faulted
+    Stopping,                       // Stoping whatever (previewing, recording) but not the subsystem itself
+    Faulted,
+    ShuttingDown
 };
 
 inline std::string toString(const CameraState& state) {
@@ -46,6 +49,7 @@ inline std::string toString(const CameraState& state) {
         case CameraState::Recording: return "Recording";
         case CameraState::Stopping: return "Stopping";
         case CameraState::Faulted: return "Faulted";
+        case CameraState::ShuttingDown: return "ShuttingDown";
         default: return "Unknown";
     }
 }
@@ -83,7 +87,7 @@ private:
     CameraState currentState_;
     CameraState requestedState_;
     bool takeSnapShot_;
-
+    CameraBackend backend_;
     // methods
     static bool canTransition(const CameraState& from, const CameraState& to);
     void updateState(const CameraState& to);
@@ -92,8 +96,8 @@ private:
     // worker functions
     // important: somehow must periodically check if they should keep running
     bool takeSnapShot();
-    bool startPreview();
-    bool startRecording();
+    bool runPreview();
+    bool runRecording();
 };
 
 
