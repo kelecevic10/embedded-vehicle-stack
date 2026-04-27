@@ -24,12 +24,20 @@ void Camera::registerHandlers() {
 
     subscribe(EventType::CAMERA_START_PREVIEW, [this](const Event&) {
         std::scoped_lock lock(cameraMutex_);
+        if (currentState_ == CameraState::Previewing) {
+            Logger::warning("Camera already in preview mode!");
+            return;
+        }
         requestedState_ = CameraState::Previewing;
         workerCv_.notify_one();
     });
 
     subscribe(EventType::CAMERA_STOP_PREVIEW, [this](const Event&) {
         std::scoped_lock lock(cameraMutex_);
+        if (currentState_ != CameraState::Previewing) {
+            Logger::warning("Camera not in preview mode!");
+            return;
+        }
         requestedState_ = CameraState::Idle;
         workerCv_.notify_one();
     });
@@ -60,16 +68,19 @@ bool Camera::start() {
     }
 
     backend_.setFrameCallback([this](const FrameData& frame) {
-        if (frame.sequenceNumber % 30 != 0) {
-            return;
-        }
+        // if (frame.sequenceNumber % 30 != 0) {
+        //     return;
+        // }
 
-        Logger::info(
-            std::format(
-           "Camera frame received! {}: {}",
-                   frame.sequenceNumber,
-                   frame.timestampNs
-                   ));
+        Logger::info(std::format(
+            "Camera frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
+            frame.sequenceNumber,
+            frame.timestampNs,
+            frame.width,
+            frame.height,
+            frame.pixelFormat,
+            frame.planes.size()
+        ));
     });
 
     backend_.setErrorCallback([this](const std::string& error) {
