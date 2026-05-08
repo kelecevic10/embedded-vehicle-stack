@@ -11,6 +11,8 @@
 #include <libcamera/libcamera.h>
 #include <cstddef>
 #include <vector>
+#include <libcamera/control_ids.h>
+#include <optional>
 
 using CameraManager = libcamera::CameraManager;
 using Stream = libcamera::Stream;
@@ -18,6 +20,7 @@ using FrameBufferAllocator = libcamera::FrameBufferAllocator;
 using Request = libcamera::Request;
 using FrameBuffer = libcamera::FrameBuffer;
 using CameraConfiguration = libcamera::CameraConfiguration;
+using StreamRole = libcamera::StreamRole;
 
 struct FramePlaneView {
     const std::byte* data;   // Pointer to the beginning of this plane's memory region.
@@ -26,7 +29,14 @@ struct FramePlaneView {
     size_t stride;           // How many bytes you move in memory to go from one plane row to the next.
 };
 
+enum class FrameType {
+    Preview,
+    Snapshot,
+    Recording
+};
+
 struct FrameData {
+    FrameType type;
     uint64_t sequenceNumber;                // Number identifying this frame in the capture sequence.
     uint64_t timestampNs;                   // Timestamp expressed in nanoseconds
     uint32_t width;
@@ -36,18 +46,23 @@ struct FrameData {
 };
 
 struct CameraConfigSpec {
-    libcamera::StreamRole role;
-    // std::optional<uint32_t> width;
-    // std::optional<uint32_t> height;
-    // std::optional<std::string> pixelFormat;
-    // std::optional<uint32_t> fps;
+    std::vector<StreamRole> roles;
+
+    std::optional<uint32_t> previewWidth;
+    std::optional<uint32_t> previewHeight;
+    std::optional<double> previewFps;
+
+    std::optional<uint32_t> snapshotWidth;
+    std::optional<uint32_t> snapshotHeight;
 };
 
 
 class CameraBackend {
 public:
-    using FrameCallback = std::function<void(const FrameData&)>;
+    using PreviewFrameCallback = std::function<void(const FrameData&)>;
+    using SnapshotFrameCallback = std::function<void(const FrameData&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
+    using WarningCallback = std::function<void(const std::string&)>;
 
     CameraBackend() = default;
     ~CameraBackend();
@@ -55,35 +70,53 @@ public:
     bool initialize();
     void shutdown();
 
-    bool configureForPreview();
-    bool configureForRecording();
-    bool configureForSnapshot();
+    bool configureForPreviewOnly();
+    bool configureForPreviewAndSnapshots();
 
-    // makes the configured camera pipeline actually begin producing frames.
-    bool startCapture();
-    bool stopCapture();
+    bool startPreview();
+    bool stopPreview();
+    bool requestSnapshot();
 
     void reportError(const std::string& error) const;
+    void reportWarning(const std::string& warning) const;
 
-    void setFrameCallback(FrameCallback callback);
+    void setPreviewFrameCallback(PreviewFrameCallback callback);
+    void setSnapshotFrameCallback(SnapshotFrameCallback callback);
     void setErrorCallback(ErrorCallback callback);
+    void setWarningCallback(WarningCallback callback);
 
 private:
     std::unique_ptr<CameraManager> cameraManager_ { nullptr };
     std::shared_ptr<libcamera::Camera> camera_ { nullptr };
     std::unique_ptr<CameraConfiguration> activeConfiguration_ { nullptr };
-    FrameCallback frameCallback_;
+
+    PreviewFrameCallback previewFrameCallback_;
+    SnapshotFrameCallback snapshotFrameCallback_;
     ErrorCallback errorCallback_;
+    WarningCallback warningCallback_;
+
+    Stream* previewStream_ { nullptr };
+    Stream* recordingStream_ { nullptr };
+    Stream* snapshotStream_ { nullptr };
+
+    std::vector<std::unique_ptr<Request>> previewRequests_;
+    std::vector<std::unique_ptr<Request>> recordingRequests_;
+    std::unique_ptr<Request> snapshotRequest_;
+
     bool initialized_ { false };
-    Stream* activeStream_ { nullptr };
+    bool previewRunning_ {false};
+    bool snapshotPending_ {false};
     std::unique_ptr<FrameBufferAllocator> bufferAllocator_;
-    std::vector<std::unique_ptr<Request>> requests_;
-    bool capturing_ { false };
-    uint64_t frameSequenceCounter_ {0};
 
     // methods
-    bool configureFromSpec(const CameraConfigSpec&);
+    bool configureFromSpec(const CameraConfigSpec& spec);
     void onRequestCompleted(Request* request);
+
+    bool createPreviewRequests();
+    bool createSnapshotRequest();
+
+    bool buildFrameData(Request* request, Stream* stream, FrameType type, FrameData& outFrame);
+    void clearCaptureResources();
 };
 
 

@@ -41,20 +41,19 @@ inline std::ostream& operator<< (std::ostream& os, const CameraState state) {
 
 class Camera : public Subsystem, public EventProcessor {
 public:
-    Camera(MessageBus* bus)
-    : Subsystem(), EventProcessor(bus)
-    {
-        currentState_ = CameraState::Uninitialized;
-        requestedState_ = CameraState::Uninitialized;
-        running_ = false;
-        takeSnapShot_ = false;
-    }
+    explicit Camera(MessageBus*);
     ~Camera() override;
 
     void registerHandlers() override;
     bool start() override;
     bool stop() override;
     std::string_view name() const override;
+
+    bool startPreviewMode();
+    bool stopPreviewMode();
+    bool takeSnapShot();
+    // bool runPreview();
+    bool runRecording();
 
 private:
     // worker thread
@@ -76,11 +75,6 @@ private:
     void updateState(const CameraState& to);
     void workerLoop();
 
-    // worker functions
-    // important: somehow must periodically check if they should keep running
-    bool takeSnapShot();
-    bool runPreview();
-    bool runRecording();
 };
 
 

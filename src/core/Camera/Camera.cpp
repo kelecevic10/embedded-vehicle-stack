@@ -6,6 +6,15 @@
 
 #include "utils/logger/Logger.h"
 
+Camera::Camera(MessageBus* bus)
+: Subsystem(), EventProcessor(bus)
+{
+    currentState_ = CameraState::Uninitialized;
+    requestedState_ = CameraState::Uninitialized;
+    running_ = false;
+    takeSnapShot_ = false;
+}
+
 Camera::~Camera() {
     if (running_.load()) {
         Camera::stop();
@@ -13,11 +22,18 @@ Camera::~Camera() {
 }
 
 // NOTE: Those handlers will be executed by the listener thread
-// to make them easy & lightweight, their job is to signal the worker thread
+// to make them easy & lightweight, their job is only to signal the worker thread
 // that some job arrived and thread-safely wake them up to work
 void Camera::registerHandlers() {
     subscribe(EventType::CAMERA_TAKE_SNAPSHOT, [this](const Event&) {
         std::scoped_lock lock(cameraMutex_);
+
+        if (currentState_ != CameraState::Previewing &&
+            requestedState_ != CameraState::Previewing) {
+            Logger::warning("Camera: snapshot ignored because preview is not active");
+            return;
+        }
+
         takeSnapShot_ = true;
         workerCv_.notify_one();
     });
@@ -67,13 +83,25 @@ bool Camera::start() {
         requestedState_ = CameraState::Idle;
     }
 
-    backend_.setFrameCallback([this](const FrameData& frame) {
-        // if (frame.sequenceNumber % 30 != 0) {
-        //     return;
-        // }
+    backend_.setPreviewFrameCallback([](const FrameData& frame) {
+        if (frame.sequenceNumber % 30 != 0) {
+            return;
+        }
 
         Logger::info(std::format(
-            "Camera frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
+            "Camera PREVIEW frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
+            frame.sequenceNumber,
+            frame.timestampNs,
+            frame.width,
+            frame.height,
+            frame.pixelFormat,
+            frame.planes.size()
+        ));
+    });
+
+    backend_.setSnapshotFrameCallback([](const FrameData& frame) {
+       Logger::info(std::format(
+            "Camera SNAPSHOT frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
             frame.sequenceNumber,
             frame.timestampNs,
             frame.width,
@@ -90,10 +118,15 @@ bool Camera::start() {
         requestedState_ = CameraState::Faulted;
     });
 
+    backend_.setWarningCallback([](const std::string& warning) {
+       Logger::warning(std::format("Camera warning: {}", warning));
+    });
+
     if (!backend_.initialize()) {
         std::scoped_lock lock(cameraMutex_);
         updateState(CameraState::Faulted);
         requestedState_ = CameraState::Faulted;
+        Logger::error("Camera: could not initialize backend!");
         return false;
     }
 
@@ -218,76 +251,103 @@ void Camera::workerLoop() {
             return;
         }
 
-        if (takeSnapShot_) {
-            takeSnapShot_ = false;
-            lock.unlock();
-            if (!takeSnapShot()) {
-                Logger::error("Camera: could not take snapshot");
-            } else {
-                Logger::info("Camera: snapshot taken!");
-            }
-            lock.lock();
-        }
-
-        if (requestedState_ == CameraState::Previewing) {
-            updateState(CameraState::Previewing);
-            lock.unlock();
-            const bool previewOk = runPreview();
-            lock.lock();
-            if (!previewOk) {
-                Logger::error("Camera: error while previewing");
-                // all the possible falses can spawn from backend issues only
-                // they are handled already through setErrorHandler()
-                // where error msg is logged and state is updated
-            } else {
-                requestedState_ == CameraState::ShuttingDown ?
-                    updateState(CameraState::ShuttingDown) :
-                    updateState(CameraState::Idle);
-            }
-        }
-
-        if (requestedState_ == CameraState::Recording) {
-            updateState(CameraState::Recording);
-            requestedState_ = CameraState::Recording;
-            // lock.unlock();
-            // TODO: call preview, check its returning status, lock mutexes, update states
-        }
-    }
-}
-
-// all these functions must periodically check if they should run
-bool Camera::takeSnapShot() {
-    // TODO: implement backend handler captureSnapShot()
-    return true;
-}
-
-bool Camera::runPreview() {
-    if (!backend_.configureForPreview()) {
-        return false;
-    }
-
-    // this actually starts the whole process; we should leave it enough time
-    // to work until we call stopCapture() here
-    if (!backend_.startCapture()) {
-        return false;
-    }
-
-    while (running_.load()) {
+        if (currentState_ == CameraState::Idle && requestedState_ == CameraState::Previewing)
         {
-            std::scoped_lock lock(cameraMutex_);
-            if (requestedState_ != CameraState::Previewing) {
-                break;
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
+            updateState(CameraState::Previewing);
 
-    if (!backend_.stopCapture()) {
+            lock.unlock();
+            const bool previewStarted = startPreviewMode();
+            lock.lock();
+
+            if (!previewStarted) {
+                updateState(CameraState::Faulted);
+                requestedState_ = CameraState::Faulted;
+            }
+            continue;
+        }
+
+        if (currentState_ == CameraState::Previewing && takeSnapShot_)
+        {
+            takeSnapShot_ = false;
+
+            lock.unlock();
+            const bool snapshotTaken = takeSnapShot();
+            lock.lock();
+            if (!snapshotTaken) {
+                Logger::error("Camera: could not request snapshot");
+            } else {
+                Logger::info("Camera: snapshot requested");
+            }
+            continue;
+        }
+
+        if (currentState_ == CameraState::Previewing && requestedState_ == CameraState::Idle)
+        {
+            updateState(CameraState::Stopping);
+
+            lock.unlock();
+            const bool previewStopped = stopPreviewMode();
+            lock.lock();
+
+            if (!previewStopped) {
+                updateState(CameraState::Faulted);
+                requestedState_ = CameraState::Faulted;
+            } else {
+                updateState(CameraState::Idle);
+            }
+            continue;
+        }
+
+        if (requestedState_ == CameraState::ShuttingDown) {
+            if (currentState_ == CameraState::Previewing) {
+                lock.unlock();
+                const bool previewStopped = stopPreviewMode();
+                lock.lock();
+
+                if (!previewStopped) {
+                    updateState(CameraState::Faulted);
+                    requestedState_ = CameraState::Faulted;
+                    continue;
+                }
+            }
+
+            updateState(CameraState::ShuttingDown);
+        }
+    }
+}
+
+bool Camera::takeSnapShot() {
+    if (!backend_.requestSnapshot()) {
+        Logger::error("Camera: could not request snapshot");
         return false;
     }
 
     return true;
 }
+
+bool Camera::startPreviewMode() {
+    if (!backend_.configureForPreviewAndSnapshots()) {
+        Logger::error("Camera: could not configure for preview + snapshot");
+        return false;
+    }
+
+    if (!backend_.startPreview()) {
+        Logger::error("Camera: could not start preview");
+        return false;
+    }
+
+    return true;
+}
+
+bool Camera::stopPreviewMode() {
+    if (!backend_.stopPreview()) {
+        Logger::error("Camera: could not stop preview");
+        return false;
+    }
+
+    return true;
+}
+
 
 bool Camera::runRecording() {
     return true;

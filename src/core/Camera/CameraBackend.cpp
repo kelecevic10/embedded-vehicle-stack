@@ -12,20 +12,21 @@ CameraBackend::~CameraBackend() {
 
 bool CameraBackend::initialize() {
     if (initialized_) {
-        reportError("CameraBackend is already initialized");
-        return false;
+        reportWarning("CameraBackend is already initialized");
+        return true;
     }
 
     cameraManager_ = std::make_unique<CameraManager>();
     const int startRes = cameraManager_->start();
     if (startRes != 0) {
+        cameraManager_.reset();
         reportError("Failed to start CameraManager");
         return false;
     }
 
     const auto& cameras = cameraManager_->cameras();
     if (cameras.empty()) {
-        reportError("No cameras found by libcamera.");
+        reportError("No cameras found by backend.");
         cameraManager_->stop();
         cameraManager_.reset();
         return false;
@@ -57,8 +58,12 @@ void CameraBackend::shutdown() {
         return;
     }
 
-    if (capturing_) {
-        stopCapture();
+    if (previewRunning_) {
+        stopPreview();
+    } else {
+        // Even if preview is not running, partially allocated capture resources may exist
+        // after a failed start/configuration attempt, so clean them explicitly
+        clearCaptureResources();
     }
 
     activeConfiguration_.reset();
@@ -82,26 +87,56 @@ void CameraBackend::reportError(const std::string &error) const {
     }
 }
 
-void CameraBackend::setFrameCallback(FrameCallback callback) {
-    frameCallback_ = std::move(callback);
+void CameraBackend::reportWarning(const std::string &warning) const {
+    if (warningCallback_) {
+        warningCallback_(warning);
+    }
+}
+
+void CameraBackend::setPreviewFrameCallback(PreviewFrameCallback callback) {
+    previewFrameCallback_ = std::move(callback);
+}
+
+void CameraBackend::setSnapshotFrameCallback(SnapshotFrameCallback callback) {
+    snapshotFrameCallback_ = std::move(callback);
 }
 
 void CameraBackend::setErrorCallback(ErrorCallback callback) {
     errorCallback_ = std::move(callback);
 }
 
+void CameraBackend::setWarningCallback(WarningCallback callback) {
+    warningCallback_ = std::move(callback);
+}
+
+// This function assumes that libcamera preserves the order of requested
+// StreamRole values when generating CameraConfiguration entries.
+// That lets us map configuration[i].stream() back to spec.roles[i]
+// and assign it to previewStream_, snapshotStream_ or recordingStream_.
 bool CameraBackend::configureFromSpec(const CameraConfigSpec& spec) {
     if (!initialized_) {
         reportError("Cannot configure camera: backend is not initialized!");
         return false;
     }
 
-    auto configuration = camera_->generateConfiguration(
-        {   spec.role   }
-        );
+    if (previewRunning_) {
+        reportError("Cannot configure camera: preview is running!");
+        return false;
+    }
 
+    if (spec.roles.empty()) {
+        reportError("Cannot configure camera: no roles specified!");
+        return false;
+    }
+
+    auto configuration = camera_->generateConfiguration(spec.roles);
     if (!configuration) {
         reportError("Failed to generate configuration!");
+        return false;
+    }
+
+    if (configuration->empty()) {
+        reportError("Generated configuration has no streams!");
         return false;
     }
 
@@ -110,10 +145,64 @@ bool CameraBackend::configureFromSpec(const CameraConfigSpec& spec) {
         reportError("Camera configuration is invalid");
         return false;
     }
+    if (validationStatus == CameraConfiguration::Adjusted) {
+        reportWarning("Camera configuration was adjusted by libcamera");
+    }
 
-    const int configureResult = camera_->configure(configuration.get());
-    if (configureResult != 0) {
-        reportError("Failed to apply configuration!");
+    const int configurationRes = camera_->configure(configuration.get());
+    if (configurationRes != 0) {
+        reportError("Failed to apply camera configuration!");
+        previewStream_ = nullptr;
+        recordingStream_ = nullptr;
+        snapshotStream_ = nullptr;
+        return false;
+    }
+
+    previewStream_ = nullptr;
+    recordingStream_ = nullptr;
+    snapshotStream_ = nullptr;
+
+    for (std::size_t i = 0; i < spec.roles.size(); i++) {
+        if (i >= configuration->size()) {
+            reportError("Generated configuration has less streams than requested!");
+            return false;
+        }
+
+        Stream* stream = configuration->at(i).stream();
+        if (!stream) {
+            reportError("Generated configuration contains null stream!");
+            return false;
+        }
+
+        switch (spec.roles[i]) {
+            case StreamRole::Viewfinder:
+                previewStream_ = stream;
+                break;
+            case StreamRole::VideoRecording:
+                recordingStream_ = stream;
+                break;
+            case StreamRole::StillCapture:
+                snapshotStream_ = stream;
+                break;
+
+            default:
+                reportWarning("Unsupported stream role found while configuring camera.");
+                break;
+        }
+    }
+
+    if (std::ranges::find(spec.roles, StreamRole::Viewfinder) != spec.roles.end() && !previewStream_) {
+        reportError("Preview stream was requested but not configured.");
+        return false;
+    }
+
+    if (std::ranges::find(spec.roles, StreamRole::VideoRecording) != spec.roles.end() && !recordingStream_) {
+        reportError("Recording stream was requested but not configured");
+        return false;
+    }
+
+    if (std::ranges::find(spec.roles, StreamRole::StillCapture) != spec.roles.end() && !snapshotStream_) {
+        reportError("Snapshot stream was requested but not configured");
         return false;
     }
 
@@ -121,153 +210,329 @@ bool CameraBackend::configureFromSpec(const CameraConfigSpec& spec) {
     return true;
 }
 
-bool CameraBackend::configureForPreview() {
+bool CameraBackend::configureForPreviewOnly() {
     return configureFromSpec(CameraConfigSpec {
-        .role = libcamera::StreamRole::Viewfinder
+        .roles = {
+            StreamRole::Viewfinder
+        }
     });
 }
 
-bool CameraBackend::configureForRecording() {
+bool CameraBackend::configureForPreviewAndSnapshots() {
     return configureFromSpec(CameraConfigSpec {
-        .role = libcamera::StreamRole::VideoRecording
+        .roles = {
+            StreamRole::Viewfinder,
+            StreamRole::StillCapture
+        }
     });
 }
 
-bool CameraBackend::configureForSnapshot() {
-    return configureFromSpec(CameraConfigSpec {
-        .role = libcamera::StreamRole::StillCapture
-    });
-}
+// bool CameraBackend::configureForSnapshot() {
+//     return configureFromSpec(CameraConfigSpec {
+//         .role = libcamera::StreamRole::StillCapture
+//     });
+// }
 
-bool CameraBackend::startCapture() {
-    if (!initialized_) {
-        reportError("Cannot start capture: backend is not initialized!");
+bool CameraBackend::createPreviewRequests() {
+    if (!camera_) {
+        reportError("Cannot create preview requests: camera instance is null.");
         return false;
     }
 
-    if (!activeConfiguration_) {
-        reportError("Cannot start capture: no configuration active!");
+    if (!previewStream_) {
+        reportError("Cannot create preview requests: preview stream is null.");
         return false;
     }
 
-    if (capturing_) {
-        reportError("Capture already in progress!");
+    if (!bufferAllocator_) {
+        reportError("Cannot create preview requests: buffer allocator is null.");
         return false;
     }
 
-    if (activeConfiguration_->empty()) {
-        reportError("Cannot start capture: active configuration has no streams!");
+    const int allocateRes = bufferAllocator_->allocate(previewStream_);
+    if (allocateRes < 0) {
+        reportError("Cannot create preview requests: failed to allocate buffers for preview stream.");
+        previewRequests_.clear();
         return false;
     }
 
-    activeStream_ = activeConfiguration_->at(0).stream();
-    if (!activeStream_) {
-        reportError("Failed to get active stream!");
+    const auto& previewBuffers = bufferAllocator_->buffers(previewStream_);
+    if (previewBuffers.empty()) {
+        reportError("Cannot create preview requests: no buffers allocated for preview stream.");
+        previewRequests_.clear();
         return false;
     }
 
-    bufferAllocator_ = std::make_unique<FrameBufferAllocator>(camera_);
-    const int allocateResult = bufferAllocator_->allocate(activeStream_);
-    if (allocateResult < 0) {
-        reportError("Failed to allocate frame buffers for active stream");
-        bufferAllocator_.reset();
-        activeStream_ = nullptr;
-        return false;
-    }
+    previewRequests_.clear();
+    previewRequests_.reserve(previewBuffers.size());
 
-    const auto& buffers = bufferAllocator_->buffers(activeStream_);
-    if (buffers.empty()) {
-        reportError("No frame buffers were allocated for active stream.");
-        bufferAllocator_.reset();
-        activeStream_ = nullptr;
-        return false;
-    }
-
-    requests_.clear();
-    requests_.reserve(buffers.size());
-
-    for (auto& buffer : buffers) {
+    for (auto& buffer : previewBuffers) {
         std::unique_ptr<Request> request = camera_->createRequest();
         if (!request) {
-            reportError("Failed to create capture request!");
-            requests_.clear();
-            bufferAllocator_.reset();
-            activeStream_ = nullptr;
-            return false;
-        }
-        const int addBufferResult = request->addBuffer(activeStream_, buffer.get());
-        if (addBufferResult < 0) {
-            reportError("Failed to attach buffer to capture request!");
-            requests_.clear();
-            bufferAllocator_.reset();
-            activeStream_ = nullptr;
+            reportError("Cannot create preview requests: failed to create request.");
+            previewRequests_.clear();
             return false;
         }
 
-        requests_.push_back(std::move(request));
-    }
-
-    camera_->requestCompleted.connect(this, &CameraBackend::onRequestCompleted);
-    const int startResult = camera_->start();
-    if (startResult < 0) {
-        reportError("Failed to start camera capture pipeline!");
-        camera_->requestCompleted.disconnect(this, &CameraBackend::onRequestCompleted);
-        requests_.clear();
-        bufferAllocator_.reset();
-        activeStream_ = nullptr;
-        return false;
-    }
-
-    capturing_ = true;
-
-    for (auto& request : requests_) {
-        const int queueResult = camera_->queueRequest(request.get());
-        if (queueResult < 0) {
-            reportError("Failed to queue initial capture request!");
-            capturing_ = false;
-            camera_->stop();
-            camera_->requestCompleted.disconnect(this, &CameraBackend::onRequestCompleted);
-            requests_.clear();
-            bufferAllocator_.reset();
-            activeStream_ = nullptr;
+        const int addBufferRes = request->addBuffer(previewStream_, buffer.get());
+        if (addBufferRes < 0) {
+            reportError("Cannot create preview requests: failed to attach buffer to request.");
+            previewRequests_.clear();
             return false;
         }
-    }
 
+        previewRequests_.push_back(std::move(request));
+    }
 
     return true;
 }
 
-bool CameraBackend::stopCapture() {
-    if (!capturing_) {
+bool CameraBackend::createSnapshotRequest() {
+    if (!camera_) {
+        reportError("Cannot create snapshot request: camera instance is null.");
+        return false;
+    }
+
+    if (!snapshotStream_) {
+        reportError("Cannot create snapshot request: preview stream is null.");
+        return false;
+    }
+
+    if (!bufferAllocator_) {
+        reportError("Cannot create snapshot request: buffer allocator is null.");
+        return false;
+    }
+
+    const int allocateRes = bufferAllocator_->allocate(snapshotStream_);
+    if (allocateRes < 0) {
+        reportError("Cannot create snapshot request: failed to allocate buffers for snapshot stream.");
+        snapshotRequest_.reset();
+        return false;
+    }
+
+    const auto& snapshotBuffers = bufferAllocator_->buffers(snapshotStream_);
+    if (snapshotBuffers.empty()) {
+        reportError("Cannot create snapshot request: no buffers allocated for snapshot stream.");
+        snapshotRequest_.reset();
+        return false;
+    }
+
+    snapshotRequest_ = camera_->createRequest();
+    if (!snapshotRequest_) {
+        reportError("Cannot create snapshot request: failed to create request.");
+        return false;
+    }
+
+    const int addBufferRes =
+            snapshotRequest_->addBuffer(snapshotStream_, snapshotBuffers.front().get());
+    if (addBufferRes < 0) {
+        reportError("Cannot create snapshot request: failed to attach buffer to request.");
+        snapshotRequest_.reset();
+        return false;
+    }
+
+    return true;
+}
+
+
+bool CameraBackend::startPreview() {
+    if (!initialized_) {
+        reportError("Cannot start preview: backend is not initialized!");
+        return false;
+    }
+
+    if (!camera_) {
+        reportError("Cannot start preview: camera instance is null!");
+        return false;
+    }
+
+    if (!activeConfiguration_) {
+        reportError("Cannot start preview: no active configuration found!");
+        return false;
+    }
+
+    if (previewRunning_) {
+        reportWarning("startPreview() called while preview is already running.");
         return true;
     }
 
-    capturing_ = false;
+    if (activeConfiguration_->empty()) {
+        reportError("Cannot start preview: active configuration has no streams!");
+        return false;
+    }
+
+    if (!previewStream_) {
+        reportError("Cannot start preview: preview stream is not configured!");
+        return false;
+    }
+
+    bufferAllocator_ = std::make_unique<FrameBufferAllocator>(camera_);
+
+    if (!createPreviewRequests()) {
+        reportError("Failed to create preview requests!");
+        clearCaptureResources();
+        return false;
+    }
+
+    if (snapshotStream_) {
+        if (!createSnapshotRequest()) {
+            reportError("Failed to create snapshot request!");
+            clearCaptureResources();
+            return false;
+        }
+    }
+
+    camera_->requestCompleted.connect(this, &CameraBackend::onRequestCompleted);
+
+    const int startResult = camera_->start();
+    if (startResult < 0) {
+        reportError("Failed to start camera preview pipeline!");
+        camera_->requestCompleted.disconnect(this, &CameraBackend::onRequestCompleted);
+        clearCaptureResources();
+        return false;
+    }
+
+    previewRunning_ = true;
+
+    // Snapshot request is not queued now. It is only prepared, so later,
+    // when Camera calls backend_.requestSnapshot(), we queue it separately.
+    for (auto& request : previewRequests_) {
+        const int queueResult = camera_->queueRequest(request.get());
+
+        if (queueResult < 0) {
+            reportError("Failed to queue preview request!");
+            previewRunning_ = false;
+            camera_->stop();
+            camera_->requestCompleted.disconnect(this, &CameraBackend::onRequestCompleted);
+            clearCaptureResources();
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool CameraBackend::stopPreview() {
+    if (!previewRunning_) {
+        reportWarning("stopPreview() called while preview is not running.");
+        return true;
+    }
+
+    previewRunning_ = false;
+    snapshotPending_ = false;
 
     if (!camera_) {
-        reportError("Cannot stop capture: camera instance is null.");
-        requests_.clear();
-        bufferAllocator_.reset();
-        activeStream_ = nullptr;
+        reportError("Cannot stop preview: camera instance is null.");
+        clearCaptureResources();
         return false;
     }
 
     const int stopResult = camera_->stop();
     if (stopResult < 0) {
-        reportError("Failed to stop camera capture pipeline!");
+        reportError("Failed to stop camera preview pipeline.");
         return false;
     }
 
     camera_->requestCompleted.disconnect(this, &CameraBackend::onRequestCompleted);
-    requests_.clear();
-    bufferAllocator_.reset();
-    activeStream_ = nullptr;
+
+    clearCaptureResources();
 
     return true;
 }
 
-void CameraBackend::onRequestCompleted(Request *request) {
+bool CameraBackend::requestSnapshot() {
+    if (!previewRunning_) {
+        reportError("Cannot request snapshot: preview is not running.");
+        return false;
+    }
+
+    if (!snapshotStream_) {
+        reportError("Cannot request snapshot: snapshot stream is not configured.");
+        return false;
+    }
+
+    if (!camera_) {
+        reportError("Cannot request snapshot: camera instance is null.");
+        return false;
+    }
+
+    if (!snapshotRequest_) {
+        reportError("Cannot request snapshot: snapshot request is not prepared.");
+        return false;
+    }
+
+    if (snapshotPending_) {
+        reportWarning("Snapshot request ignored: snapshot is already pending.");
+        return true;
+    }
+
+    snapshotPending_ = true;
+
+    const int queueRes = camera_->queueRequest(snapshotRequest_.get());
+    if (queueRes < 0) {
+        reportError("Failed to queue snapshot request.");
+        snapshotPending_ = false;
+        return false;
+    }
+
+    return true;
+}
+
+bool CameraBackend::buildFrameData(Request *request, Stream *stream, FrameType type, FrameData &outFrame) {
+    if (!request) {
+        reportError("Cannot build frame data: received null request.");
+        return false;
+    }
+
+    if (!stream) {
+        reportError("Cannot build frame data: received null stream.");
+        return false;
+    }
+
+    const auto it = request->buffers().find(stream);
+    if (it == request->buffers().end() || !it->second) {
+        reportError("Cannot build frame data: request does not contain a valid buffer for the stream.");
+        return false;
+    }
+
+    FrameBuffer* buffer = it->second;
+    const auto& streamConfig = stream->configuration();
+
+    const auto& planes = buffer->planes();
+    const auto& metaPlanes = buffer->metadata().planes();
+    if (metaPlanes.size() < planes.size()) {
+        reportError("Cannot build frame data: frame metadata contains fewer planes than buffer.");
+        return false;
+    }
+
+    outFrame = FrameData {};
+    outFrame.type = type;
+    outFrame.sequenceNumber = request->sequence();
+    outFrame.timestampNs = buffer->metadata().timestamp;
+    outFrame.width = streamConfig.size.width;
+    outFrame.height = streamConfig.size.height;
+    outFrame.pixelFormat = streamConfig.pixelFormat.toString();
+
+    // why do we reserve this space when planes within our outFrame structure are not equivalent to the
+    // real planes from libcamera?
+    outFrame.planes.reserve(planes.size());
+    for (std::size_t i = 0; i < planes.size(); i++) {
+        const auto& plane = planes[i];
+        const auto& metaPlane = metaPlanes[i];
+
+        FramePlaneView planeView {};
+        planeView.data = nullptr;
+        planeView.length = plane.length;
+        planeView.bytesUsed = metaPlane.bytesused;
+        planeView.stride = streamConfig.stride;
+
+        outFrame.planes.push_back(planeView);
+    }
+
+    return true;
+}
+
+void CameraBackend::onRequestCompleted(Request* request) {
     if (!request) {
         reportError("Received null completed request.");
         return;
@@ -277,56 +542,82 @@ void CameraBackend::onRequestCompleted(Request *request) {
         return;
     }
 
-    if (!capturing_) {
+    if (!previewRunning_) {
         return;
     }
 
-    if (!activeStream_) {
-        reportError("Active stream is null in request completion handler.");
+    if (!camera_) {
+        reportError("Cannot handle completed request: camera instance is null.");
         return;
     }
 
-    const auto it = request->buffers().find(activeStream_);
-    if (it == request->buffers().end() || !it->second) {
-        reportError("Completed request does not contain a valid buffer for the active stream.");
+    const auto& buffers = request->buffers();
+
+    const bool hasPreviewBuffer =
+        previewStream_ && buffers.contains(previewStream_);
+
+    const bool hasSnapshotBuffer =
+        snapshotStream_ && buffers.contains(snapshotStream_);
+
+    if (!hasPreviewBuffer && !hasSnapshotBuffer) {
+        reportWarning("Completed request does not contain any known stream buffer.");
         return;
     }
 
-    if (!activeConfiguration_ || activeConfiguration_->empty()) {
-        reportError("Active configuration is missing in request completion handler");
+    if (hasPreviewBuffer) {
+        FrameData previewFrame {};
+
+        if (buildFrameData(request, previewStream_, FrameType::Preview, previewFrame)) {
+            if (previewFrameCallback_) {
+                previewFrameCallback_(previewFrame);
+            }
+        }
+    }
+
+    if (hasSnapshotBuffer) {
+        FrameData snapshotFrame {};
+
+        if (buildFrameData(request, snapshotStream_, FrameType::Snapshot, snapshotFrame)) {
+            if (snapshotFrameCallback_) {
+                snapshotFrameCallback_(snapshotFrame);
+            }
+        }
+
+        snapshotPending_ = false;
+
+        request->reuse(Request::ReuseBuffers);
+        // Snapshot requests are one-shot requests.
+        // They are not reused/requeued automatically.
         return;
-    }
-
-    FrameBuffer* buffer = it->second;
-    FrameData frame {};
-    frame.sequenceNumber = request->sequence();
-    frame.timestampNs = buffer->metadata().timestamp;
-    frame.width = activeConfiguration_->at(0).size.width;
-    frame.height = activeConfiguration_->at(0).size.height;
-    frame.pixelFormat = activeConfiguration_->at(0).pixelFormat.toString();
-
-    frame.planes.reserve(buffer->planes().size());
-    for (size_t i = 0; i < buffer->planes().size(); i++) {
-        const auto& plane = buffer->planes()[i];
-        const auto& metaPlane = buffer->metadata().planes()[i];
-
-        FramePlaneView planeView {};
-        planeView.data = nullptr;           // TODO: map plane memory properly
-        planeView.length = plane.length;
-        planeView.bytesUsed = metaPlane.bytesused;
-        planeView.stride = 0;               // TODO: populate when plane-row layout is know
-
-        frame.planes.push_back(planeView);
-    }
-
-    if (frameCallback_) {
-        frameCallback_(frame);
     }
 
     request->reuse(Request::ReuseBuffers);
+
     const int queueResult = camera_->queueRequest(request);
+
     if (queueResult < 0) {
-        reportError("Failed to re-queue capture request!");
-        capturing_ = false;
+        reportError("Failed to re-queue preview request.");
+        previewRunning_ = false;
     }
+}
+
+
+
+// Must be called only after the camera pipeline has been stopped,
+// or after a failed startup path where requests were never queued.
+// Preview requests and frame buffers must not be destroyed while
+// libcamera may still own or process them.
+void CameraBackend::clearCaptureResources() {
+    previewRequests_.clear();
+    recordingRequests_.clear();
+    snapshotRequest_.reset();
+
+    bufferAllocator_.reset();
+
+    previewStream_ = nullptr;
+    snapshotStream_ = nullptr;
+    recordingStream_ = nullptr;
+
+    snapshotPending_ = false;
+    previewRunning_ = false;
 }
