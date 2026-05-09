@@ -3,8 +3,12 @@
 //
 
 #include "CameraBackend.h"
-
 #include "utils/logger/Logger.h"
+#include <sys/mman.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
+
 
 CameraBackend::~CameraBackend() {
     shutdown();
@@ -256,6 +260,12 @@ bool CameraBackend::createPreviewRequests() {
         return false;
     }
 
+    if (!mapBuffersForStream(previewStream_)) {
+        reportError("Cannot create preview requests: failed to map buffers for preview stream.");
+        previewRequests_.clear();
+        return false;
+    }
+
     const auto& previewBuffers = bufferAllocator_->buffers(previewStream_);
     if (previewBuffers.empty()) {
         reportError("Cannot create preview requests: no buffers allocated for preview stream.");
@@ -306,6 +316,12 @@ bool CameraBackend::createSnapshotRequest() {
     const int allocateRes = bufferAllocator_->allocate(snapshotStream_);
     if (allocateRes < 0) {
         reportError("Cannot create snapshot request: failed to allocate buffers for snapshot stream.");
+        snapshotRequest_.reset();
+        return false;
+    }
+
+    if (!mapBuffersForStream(snapshotStream_)) {
+        reportError("Cannot create snapshot request: failed to map buffers for snapshot stream.");
         snapshotRequest_.reset();
         return false;
     }
@@ -612,6 +628,8 @@ void CameraBackend::clearCaptureResources() {
     recordingRequests_.clear();
     snapshotRequest_.reset();
 
+    unmapFrameBuffers();
+
     bufferAllocator_.reset();
 
     previewStream_ = nullptr;
@@ -620,4 +638,124 @@ void CameraBackend::clearCaptureResources() {
 
     snapshotPending_ = false;
     previewRunning_ = false;
+}
+
+bool CameraBackend::mapFrameBuffer(FrameBuffer *buffer) {
+    if (!buffer) {
+        reportError("Cannot map frame buffer: received null buffer.");
+        return false;
+    }
+
+    if (mappedBuffers_.contains(buffer)) {
+        return true;
+    }
+
+    const long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) {
+        reportError("Cannot map frame buffer: failed to get system page size.");
+        return false;
+    }
+
+    MappedBuffer mappedBuffer {};
+    const auto& planes = buffer->planes();
+
+    mappedBuffer.planes.reserve(planes.size());
+
+    for (const auto& plane: planes) {
+        const off_t planeOffset = static_cast<off_t>(plane.offset);
+
+        // mmap() requires the offset to be aligned to the system page size
+        // if the actual plane starts at a non-aligned offset, we map from the
+        // previous aligned offset and then shift the data pointer manually.
+        const off_t allignedOffset = (planeOffset / pageSize) * pageSize;
+
+        const size_t offsetDelta = static_cast<size_t>(planeOffset - allignedOffset);
+
+        const size_t mappedLength = plane.length + offsetDelta;
+
+        void* mappedAddress = mmap(
+            nullptr,
+            mappedLength,
+            PROT_READ,
+            MAP_SHARED,
+            plane.fd.get(),
+            allignedOffset
+        );
+
+        if (mappedAddress == MAP_FAILED) {
+            reportError(std::format(
+                "Failed to map frame buffer: {}.",
+                strerror(errno)
+                ));
+
+            // Roll back all planes that were already mapped for this buffer
+            for (const auto& mappedPlane: mappedBuffer.planes) {
+                if (mappedPlane.mappedAddress &&
+                    mappedPlane.mappedAddress != MAP_FAILED &&
+                    mappedPlane.mappedLength > 0) {
+                    munmap(mappedPlane.mappedAddress, mappedPlane.mappedLength);
+                }
+            }
+            return false;
+        }
+
+        const auto* data = reinterpret_cast<const std::byte*> (
+            static_cast<const char*>(mappedAddress) + offsetDelta
+        );
+
+        mappedBuffer.planes.push_back(MappedPlane {
+            .mappedAddress = mappedAddress,
+            .data = data,
+            .mappedLength = mappedLength,
+            .length = plane.length
+        });
+    }
+
+    mappedBuffers_.emplace(buffer, std::move(mappedBuffer));
+    return true;
+}
+
+bool CameraBackend::mapBuffersForStream(Stream *stream) {
+    if (!stream) {
+        reportError("Cannot map buffers for stream: received null stream.");
+        return false;
+    }
+
+    if (!bufferAllocator_) {
+        reportError("Cannot map buffers for stream: buffer allocator is null.");
+        return false;
+    }
+
+    const auto& buffers = bufferAllocator_->buffers(stream);
+    if (buffers.empty()) {
+        reportError("Cannot map buffers for stream: no buffers allocated for stream.");
+        return false;
+    }
+
+    for (const auto& buffer: buffers) {
+        if (!mapFrameBuffer(buffer.get())) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void CameraBackend::unmapFrameBuffers() {
+    for (auto& [buffer, mappedBuffer]: mappedBuffers_) {
+        for (auto& plane : mappedBuffer.planes) {
+            if (plane.mappedAddress &&
+                plane.mappedAddress != MAP_FAILED &&
+                plane.mappedLength > 0) {
+                munmap(plane.mappedAddress, plane.mappedLength);
+                }
+
+            plane.mappedAddress = nullptr;
+            plane.data = nullptr;
+            plane.mappedLength = 0;
+            plane.length = 0;
+        }
+    }
+
+    mappedBuffers_.clear();
 }

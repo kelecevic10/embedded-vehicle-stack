@@ -13,6 +13,7 @@
 #include <vector>
 #include <libcamera/control_ids.h>
 #include <optional>
+#include <libcamera/framebuffer.h>
 
 using CameraManager = libcamera::CameraManager;
 using Stream = libcamera::Stream;
@@ -59,6 +60,17 @@ struct FrameData {
     uint32_t height;
     std::string pixelFormat;
     std::vector<FramePlaneData> planes;
+};
+
+struct MappedPlane {
+    void* mappedAddress { nullptr };    // address returned by mmap
+    const std::byte* data { nullptr };  // real plane data address
+    size_t mappedLength { 0 };          // length for munmap
+    size_t length { 0 };                // logical plane length
+};
+
+struct MappedBuffer {
+    std::vector<MappedPlane> planes;
 };
 
 struct CameraConfigSpec {
@@ -120,7 +132,9 @@ private:
     bool initialized_ { false };
     bool previewRunning_ {false};
     bool snapshotPending_ {false};
+
     std::unique_ptr<FrameBufferAllocator> bufferAllocator_;
+    std::unordered_map<FrameBuffer*, MappedBuffer> mappedBuffers_;
 
     // methods
     bool configureFromSpec(const CameraConfigSpec& spec);
@@ -131,6 +145,11 @@ private:
 
     bool buildFrameView(Request* request, Stream* stream, FrameType type, FrameView& outFrame);
     void clearCaptureResources();
+
+    // mapping helpers
+    bool mapFrameBuffer(FrameBuffer* buffer);
+    bool mapBuffersForStream(Stream* stream);
+    void unmapFrameBuffers();
 };
 
 
