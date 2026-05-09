@@ -4,7 +4,92 @@
 
 #include "Camera.h"
 
+#include <filesystem>
+
 #include "utils/logger/Logger.h"
+
+static bool saveRawSnapshotToDisk(const FrameData& frame) {
+    namespace fs = std::filesystem;
+
+    const fs::path snapshotsDir = "../Images";
+
+    if (!fs::exists(snapshotsDir)) {
+        if (!fs::create_directory(snapshotsDir)) {
+            Logger::error("Failed to create snapshots directory.");
+            return false;
+        }
+    }
+
+    std::ostringstream baseName;
+    baseName << "snapshot_" << frame.sequenceNumber;
+
+    const fs::path metadataPath =
+        snapshotsDir / (baseName.str() + "_metadata.txt");
+
+    std::ofstream metadataFile(metadataPath);
+
+    if (!metadataFile.is_open()) {
+        Logger::error(std::format(
+            "Failed to open metadata file: {}",
+            metadataPath.string()
+        ));
+        return false;
+    }
+
+    metadataFile << "sequenceNumber: " << frame.sequenceNumber << '\n';
+    metadataFile << "timestampNs: " << frame.timestampNs << '\n';
+    metadataFile << "width: " << frame.width << '\n';
+    metadataFile << "height: " << frame.height << '\n';
+    metadataFile << "pixelFormat: " << frame.pixelFormat << '\n';
+    metadataFile << "planes: " << frame.planes.size() << '\n';
+
+    for (std::size_t i = 0; i < frame.planes.size(); ++i) {
+        const auto& plane = frame.planes[i];
+
+        const fs::path planePath =
+            snapshotsDir / (baseName.str() + "_plane_" + std::to_string(i) + ".raw");
+
+        std::ofstream planeFile(planePath, std::ios::binary);
+
+        if (!planeFile.is_open()) {
+            Logger::error(std::format(
+                "Failed to open plane file: {}",
+                planePath.string()
+            ));
+            return false;
+        }
+
+        planeFile.write(
+            reinterpret_cast<const char*>(plane.data.data()),
+            static_cast<std::streamsize>(plane.bytesUsed)
+        );
+
+        if (!planeFile) {
+            Logger::error(std::format(
+                "Failed to write plane file: {}",
+                planePath.string()
+            ));
+            return false;
+        }
+
+        metadataFile << '\n';
+        metadataFile << "plane[" << i << "].file: " << planePath.filename().string() << '\n';
+        metadataFile << "plane[" << i << "].bytesUsed: " << plane.bytesUsed << '\n';
+        metadataFile << "plane[" << i << "].stride: " << plane.stride << '\n';
+        metadataFile << "plane[" << i << "].vectorSize: " << plane.data.size() << '\n';
+    }
+
+    Logger::info(std::format(
+        "Raw snapshot saved | seq={} | {}x{} | format={} | planes={}",
+        frame.sequenceNumber,
+        frame.width,
+        frame.height,
+        frame.pixelFormat,
+        frame.planes.size()
+    ));
+
+    return true;
+}
 
 Camera::Camera(MessageBus* bus)
 : Subsystem(), EventProcessor(bus)
@@ -88,8 +173,17 @@ bool Camera::start() {
             return;
         }
 
+        bool valid = true;
+        for (const auto& plane : frame.planes) {
+            if (plane.data == nullptr) {
+                valid = false;
+                break;
+            }
+        }
+
         Logger::info(std::format(
-            "Camera PREVIEW frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
+            "Camera PREVIEW frame received: {} | seq={} | ts={}ns | {}x{} | format={} | planes={}",
+            valid ? "VALID" : "INVALID",
             frame.sequenceNumber,
             frame.timestampNs,
             frame.width,
@@ -99,7 +193,7 @@ bool Camera::start() {
         ));
     });
 
-    backend_.setSnapshotFrameCallback([](const FrameView& frame) {
+    backend_.setSnapshotFrameCallback([](const FrameData&& frame) {
        Logger::info(std::format(
             "Camera SNAPSHOT frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
             frame.sequenceNumber,
@@ -109,6 +203,10 @@ bool Camera::start() {
             frame.pixelFormat,
             frame.planes.size()
         ));
+
+        if (!saveRawSnapshotToDisk(frame)) {
+            Logger::error("Failed to save raw snapshot to disk.");
+        }
     });
 
     backend_.setErrorCallback([this](const std::string& error) {
@@ -320,6 +418,8 @@ void Camera::workerLoop() {
         }
     }
 }
+
+
 
 bool Camera::takeSnapShot() {
     if (!backend_.requestSnapshot()) {

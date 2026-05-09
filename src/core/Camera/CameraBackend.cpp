@@ -304,7 +304,7 @@ bool CameraBackend::createSnapshotRequest() {
     }
 
     if (!snapshotStream_) {
-        reportError("Cannot create snapshot request: preview stream is null.");
+        reportError("Cannot create snapshot request: snapshot stream is null.");
         return false;
     }
 
@@ -486,7 +486,7 @@ bool CameraBackend::requestSnapshot() {
 
     const int queueRes = camera_->queueRequest(snapshotRequest_.get());
     if (queueRes < 0) {
-        reportError("Failed to queue snapshot request.");
+        reportWarning("Failed to queue snapshot request.");
         snapshotPending_ = false;
         return false;
     }
@@ -496,28 +496,40 @@ bool CameraBackend::requestSnapshot() {
 
 bool CameraBackend::buildFrameView(Request *request, Stream *stream, FrameType type, FrameView &outFrameView) {
     if (!request) {
-        reportError("Cannot build frame data: received null request.");
+        reportError("Cannot build frame view: received null request.");
         return false;
     }
 
     if (!stream) {
-        reportError("Cannot build frame data: received null stream.");
+        reportError("Cannot build frame view: received null stream.");
         return false;
     }
 
     const auto it = request->buffers().find(stream);
     if (it == request->buffers().end() || !it->second) {
-        reportError("Cannot build frame data: request does not contain a valid buffer for the stream.");
+        reportError("Cannot build frame view: request does not contain a valid buffer for the stream.");
         return false;
     }
 
     FrameBuffer* buffer = it->second;
+
     const auto& streamConfig = stream->configuration();
 
     const auto& planes = buffer->planes();
     const auto& metaPlanes = buffer->metadata().planes();
     if (metaPlanes.size() < planes.size()) {
-        reportError("Cannot build frame data: frame metadata contains fewer planes than buffer.");
+        reportError("Cannot build frame view: frame metadata contains fewer planes than buffer.");
+        return false;
+    }
+
+    const auto mappedBufferIt = mappedBuffers_.find(buffer);
+    if (mappedBufferIt == mappedBuffers_.end()) {
+        reportError("Cannot build frame view: buffer is not mapped.");
+        return false;
+    }
+    const MappedBuffer& mappedBuffer = mappedBufferIt->second;
+    if (mappedBuffer.planes.size() < planes.size()) {
+        reportError("Cannot build frame view: mapped buffer contains fewer planes than frame buffer");
         return false;
     }
 
@@ -528,21 +540,76 @@ bool CameraBackend::buildFrameView(Request *request, Stream *stream, FrameType t
     outFrameView.width = streamConfig.size.width;
     outFrameView.height = streamConfig.size.height;
     outFrameView.pixelFormat = streamConfig.pixelFormat.toString();
-
-    // why do we reserve this space when planes within our outFrame structure are not equivalent to the
-    // real planes from libcamera?
     outFrameView.planes.reserve(planes.size());
+
     for (std::size_t i = 0; i < planes.size(); i++) {
-        const auto& plane = planes[i];
+
         const auto& metaPlane = metaPlanes[i];
+        const auto& mappedPlane = mappedBuffer.planes[i];
+
+        if (!mappedPlane.data) {
+            reportError("Cannot build frame view: mapped plane data is null.");
+            return false;
+        }
+
+        if (metaPlane.bytesused > mappedPlane.length) {
+            reportError("Cannot build frame view: bytesUsed exceeds mapped plane length.");
+            return false;
+        }
 
         FramePlaneView planeView {};
-        planeView.data = nullptr;
-        planeView.length = plane.length;
+        planeView.data = mappedPlane.data;
+        planeView.length = mappedPlane.length;
         planeView.bytesUsed = metaPlane.bytesused;
         planeView.stride = streamConfig.stride;
 
         outFrameView.planes.push_back(planeView);
+    }
+
+    return true;
+}
+
+bool CameraBackend::makeOwnedFrameData(const FrameView &frameView, FrameData &frameData) {
+    frameData = FrameData {};
+    frameData.type = frameView.type;
+    frameData.sequenceNumber = frameView.sequenceNumber;
+    frameData.timestampNs = frameView.timestampNs;
+    frameData.width = frameView.width;
+    frameData.height = frameView.height;
+    frameData.pixelFormat = frameView.pixelFormat;
+
+    frameData.planes.reserve(frameView.planes.size());
+    for (const auto& planeView : frameView.planes) {
+        FramePlaneData planeData {};
+
+        if (planeView.data == nullptr) {
+            reportError("Cannot make owned frame data: plane data is null.");
+            return false;
+        }
+
+        if (planeView.bytesUsed == 0) {
+            reportError("Cannot make owned frame data: plane bytesUsed is 0.");
+            return false;
+        }
+
+        if (planeView.bytesUsed > planeView.length) {
+            reportError("Cannot make owned frame data: plane bytesUsed exceeds plane length.");
+            return false;
+        }
+
+        // copy metadata
+        planeData.bytesUsed = planeView.bytesUsed;
+        planeData.stride = planeView.stride;
+
+        // copy data
+        planeData.data.resize(planeView.bytesUsed);
+        std::memcpy(
+            planeData.data.data(),
+            planeView.data,
+            planeView.bytesUsed
+        );
+        
+        frameData.planes.push_back(std::move(planeData));
     }
 
     return true;
@@ -582,7 +649,6 @@ void CameraBackend::onRequestCompleted(Request* request) {
 
     if (hasPreviewBuffer) {
         FrameView previewFrame {};
-
         if (buildFrameView(request, previewStream_, FrameType::Preview, previewFrame)) {
             if (previewFrameCallback_) {
                 previewFrameCallback_(previewFrame);
@@ -594,8 +660,13 @@ void CameraBackend::onRequestCompleted(Request* request) {
         FrameView snapshotFrame {};
 
         if (buildFrameView(request, snapshotStream_, FrameType::Snapshot, snapshotFrame)) {
-            if (snapshotFrameCallback_) {
-                snapshotFrameCallback_(snapshotFrame);
+            FrameData frameData {};
+            if (makeOwnedFrameData(snapshotFrame, frameData)) {
+                if (snapshotFrameCallback_) {
+                    snapshotFrameCallback_(std::move(frameData));
+                }
+            } else {
+                reportWarning("Failed to create frame data from snapshot frame.");
             }
         }
 
@@ -613,7 +684,7 @@ void CameraBackend::onRequestCompleted(Request* request) {
 
     if (queueResult < 0) {
         reportError("Failed to re-queue preview request.");
-        previewRunning_ = false;
+        return;
     }
 }
 
@@ -662,14 +733,15 @@ bool CameraBackend::mapFrameBuffer(FrameBuffer *buffer) {
     mappedBuffer.planes.reserve(planes.size());
 
     for (const auto& plane: planes) {
+
         const off_t planeOffset = static_cast<off_t>(plane.offset);
 
         // mmap() requires the offset to be aligned to the system page size
         // if the actual plane starts at a non-aligned offset, we map from the
         // previous aligned offset and then shift the data pointer manually.
-        const off_t allignedOffset = (planeOffset / pageSize) * pageSize;
+        const off_t alignedOffset = (planeOffset / pageSize) * pageSize;
 
-        const size_t offsetDelta = static_cast<size_t>(planeOffset - allignedOffset);
+        const size_t offsetDelta = static_cast<size_t>(planeOffset - alignedOffset);
 
         const size_t mappedLength = plane.length + offsetDelta;
 
@@ -679,7 +751,7 @@ bool CameraBackend::mapFrameBuffer(FrameBuffer *buffer) {
             PROT_READ,
             MAP_SHARED,
             plane.fd.get(),
-            allignedOffset
+            alignedOffset
         );
 
         if (mappedAddress == MAP_FAILED) {

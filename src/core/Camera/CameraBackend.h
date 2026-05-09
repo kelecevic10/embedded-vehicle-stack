@@ -86,7 +86,7 @@ struct CameraConfigSpec {
 class CameraBackend {
 public:
     using PreviewFrameCallback = std::function<void(const FrameView&)>;
-    using SnapshotFrameCallback = std::function<void(const FrameView&)>;
+    using SnapshotFrameCallback = std::function<void(const FrameData&&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
     using WarningCallback = std::function<void(const std::string&)>;
 
@@ -144,12 +144,14 @@ private:
     bool createSnapshotRequest();
 
     bool buildFrameView(Request* request, Stream* stream, FrameType type, FrameView& outFrame);
-    void clearCaptureResources();
+    bool makeOwnedFrameData(const FrameView& frameView, FrameData& frameData);
 
     // mapping helpers
     bool mapFrameBuffer(FrameBuffer* buffer);
     bool mapBuffersForStream(Stream* stream);
     void unmapFrameBuffers();
+
+    void clearCaptureResources();
 };
 
 
