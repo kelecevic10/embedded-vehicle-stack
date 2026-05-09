@@ -83,7 +83,7 @@ bool Camera::start() {
         requestedState_ = CameraState::Idle;
     }
 
-    backend_.setPreviewFrameCallback([](const FrameData& frame) {
+    backend_.setPreviewFrameCallback([](const FrameView& frame) {
         if (frame.sequenceNumber % 30 != 0) {
             return;
         }
@@ -99,7 +99,7 @@ bool Camera::start() {
         ));
     });
 
-    backend_.setSnapshotFrameCallback([](const FrameData& frame) {
+    backend_.setSnapshotFrameCallback([](const FrameView& frame) {
        Logger::info(std::format(
             "Camera SNAPSHOT frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
             frame.sequenceNumber,
@@ -231,6 +231,11 @@ bool Camera::canTransition(const CameraState &from, const CameraState &to) {
 // caller must lock the mutex before a call
 void Camera::updateState(const CameraState &to) {
     if (canTransition(currentState_, to)) {
+        Event stateChanged {
+            EventType::SUBSYSTEM_STATE_CHANGED,
+            std::format("{}: {} -> {}", name(), toString(currentState_), toString(to)),
+        };
+        publish(std::move(stateChanged));
         currentState_ = to;
     } else {
         Logger::error(std::format("Camera: Cannot transition from {} to {}", toString(currentState_), toString(to)));

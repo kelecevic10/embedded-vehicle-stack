@@ -55,6 +55,7 @@ public:
         bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
         bus_->subscribe(EventType::DIAGNOSTICS_WARNING, this);
         bus_->subscribe(EventType::DIAGNOSTICS_ALERT, this);
+        bus_->subscribe(EventType::SUBSYSTEM_STATE_CHANGED, this);
         // bus_->subscribe(EventType::SYSTEM_SHUTDOWN, this);
     };
 
@@ -72,7 +73,13 @@ public:
     void registerHandlers() override {
         subscribe(EventType::DIAGNOSTICS_UPDATE, [](const Event& e) {
             const auto snapshot = std::get<SnapShot>(e.payload);
-            info(std::format("Diagnostics update\n{}", SnapShotToString(snapshot)));
+            info
+            (std::format
+                    (
+                    "\n================ Diagnostics update ================\n{}",
+                    SnapShotToString(snapshot)
+                    )
+            );
         });
 
         subscribe(EventType::DIAGNOSTICS_WARNING, [](const Event& e) {
@@ -83,6 +90,11 @@ public:
         subscribe(EventType::DIAGNOSTICS_ALERT, [](const Event& e) {
             const auto message = std::get<std::string>(e.payload);
             error(message);
+        });
+
+        subscribe(EventType::SUBSYSTEM_STATE_CHANGED, [](const Event& e) {
+            const auto payload = std::get<std::string>(e.payload);
+            info(payload);
         });
     };
 

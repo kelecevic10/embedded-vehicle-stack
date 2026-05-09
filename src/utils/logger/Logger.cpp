@@ -24,7 +24,7 @@ std::string Logger::formatLog(LogType type, std::string_view message) {
     constexpr size_t EXTRA_CAPACITY = 20;
     result.reserve(message.size() + timestamp.size() + logType.size() + EXTRA_CAPACITY);
     result += color;
-    result += std::format("[{}] [{}] {}", logType, timestamp, message);
+    result += std::format("[{}] [{}] {}", timestamp, logType, message);
     result += TextColor::RESET;
 
     return result;

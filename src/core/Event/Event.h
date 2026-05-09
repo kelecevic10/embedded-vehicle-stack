@@ -16,7 +16,7 @@
 enum class EventType {
     // System & Lifecycle
     SYSTEM_SHUTDOWN,
-
+    SUBSYSTEM_STATE_CHANGED,
     // Diagnostics
     DIAGNOSTICS_UPDATE,
     DIAGNOSTICS_WARNING,
