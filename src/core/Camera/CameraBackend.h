@@ -35,7 +35,7 @@ enum class FrameType {
     Recording
 };
 
-struct FrameData {
+struct FrameView {
     FrameType type;
     uint64_t sequenceNumber;                // Number identifying this frame in the capture sequence.
     uint64_t timestampNs;                   // Timestamp expressed in nanoseconds
@@ -45,13 +45,27 @@ struct FrameData {
     std::vector<FramePlaneView> planes;     // Memory views of all planes that make up this frame
 };
 
+struct FramePlaneData {
+    std::vector<std::byte> data;
+    size_t bytesUsed;
+    size_t stride;
+};
+
+struct FrameData {
+    FrameType type;
+    uint64_t sequenceNumber;
+    uint64_t timestampNs;
+    uint32_t width;
+    uint32_t height;
+    std::string pixelFormat;
+    std::vector<FramePlaneData> planes;
+};
+
 struct CameraConfigSpec {
     std::vector<StreamRole> roles;
-
     std::optional<uint32_t> previewWidth;
     std::optional<uint32_t> previewHeight;
     std::optional<double> previewFps;
-
     std::optional<uint32_t> snapshotWidth;
     std::optional<uint32_t> snapshotHeight;
 };
@@ -59,8 +73,8 @@ struct CameraConfigSpec {
 
 class CameraBackend {
 public:
-    using PreviewFrameCallback = std::function<void(const FrameData&)>;
-    using SnapshotFrameCallback = std::function<void(const FrameData&)>;
+    using PreviewFrameCallback = std::function<void(const FrameView&)>;
+    using SnapshotFrameCallback = std::function<void(const FrameView&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
     using WarningCallback = std::function<void(const std::string&)>;
 
@@ -115,7 +129,7 @@ private:
     bool createPreviewRequests();
     bool createSnapshotRequest();
 
-    bool buildFrameData(Request* request, Stream* stream, FrameType type, FrameData& outFrame);
+    bool buildFrameView(Request* request, Stream* stream, FrameType type, FrameView& outFrame);
     void clearCaptureResources();
 };
 

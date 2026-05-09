@@ -478,7 +478,7 @@ bool CameraBackend::requestSnapshot() {
     return true;
 }
 
-bool CameraBackend::buildFrameData(Request *request, Stream *stream, FrameType type, FrameData &outFrame) {
+bool CameraBackend::buildFrameView(Request *request, Stream *stream, FrameType type, FrameView &outFrameView) {
     if (!request) {
         reportError("Cannot build frame data: received null request.");
         return false;
@@ -505,17 +505,17 @@ bool CameraBackend::buildFrameData(Request *request, Stream *stream, FrameType t
         return false;
     }
 
-    outFrame = FrameData {};
-    outFrame.type = type;
-    outFrame.sequenceNumber = request->sequence();
-    outFrame.timestampNs = buffer->metadata().timestamp;
-    outFrame.width = streamConfig.size.width;
-    outFrame.height = streamConfig.size.height;
-    outFrame.pixelFormat = streamConfig.pixelFormat.toString();
+    outFrameView = FrameView {};
+    outFrameView.type = type;
+    outFrameView.sequenceNumber = request->sequence();
+    outFrameView.timestampNs = buffer->metadata().timestamp;
+    outFrameView.width = streamConfig.size.width;
+    outFrameView.height = streamConfig.size.height;
+    outFrameView.pixelFormat = streamConfig.pixelFormat.toString();
 
     // why do we reserve this space when planes within our outFrame structure are not equivalent to the
     // real planes from libcamera?
-    outFrame.planes.reserve(planes.size());
+    outFrameView.planes.reserve(planes.size());
     for (std::size_t i = 0; i < planes.size(); i++) {
         const auto& plane = planes[i];
         const auto& metaPlane = metaPlanes[i];
@@ -526,7 +526,7 @@ bool CameraBackend::buildFrameData(Request *request, Stream *stream, FrameType t
         planeView.bytesUsed = metaPlane.bytesused;
         planeView.stride = streamConfig.stride;
 
-        outFrame.planes.push_back(planeView);
+        outFrameView.planes.push_back(planeView);
     }
 
     return true;
@@ -565,9 +565,9 @@ void CameraBackend::onRequestCompleted(Request* request) {
     }
 
     if (hasPreviewBuffer) {
-        FrameData previewFrame {};
+        FrameView previewFrame {};
 
-        if (buildFrameData(request, previewStream_, FrameType::Preview, previewFrame)) {
+        if (buildFrameView(request, previewStream_, FrameType::Preview, previewFrame)) {
             if (previewFrameCallback_) {
                 previewFrameCallback_(previewFrame);
             }
@@ -575,9 +575,9 @@ void CameraBackend::onRequestCompleted(Request* request) {
     }
 
     if (hasSnapshotBuffer) {
-        FrameData snapshotFrame {};
+        FrameView snapshotFrame {};
 
-        if (buildFrameData(request, snapshotStream_, FrameType::Snapshot, snapshotFrame)) {
+        if (buildFrameView(request, snapshotStream_, FrameType::Snapshot, snapshotFrame)) {
             if (snapshotFrameCallback_) {
                 snapshotFrameCallback_(snapshotFrame);
             }
