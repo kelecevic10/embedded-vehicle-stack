@@ -50,6 +50,8 @@ struct FramePlaneData {
     std::vector<std::byte> data;
     size_t bytesUsed;
     size_t stride;
+    uint32_t width;
+    uint32_t height;
 };
 
 struct FrameData {
@@ -71,6 +73,16 @@ struct MappedPlane {
 
 struct MappedBuffer {
     std::vector<MappedPlane> planes;
+};
+
+struct EncodedFrame {
+    FrameType type;
+    uint64_t sequenceNumber;
+    uint64_t timestampNs;
+    uint32_t width;
+    uint32_t height;
+    std::string format;
+    std::vector<std::byte> data;
 };
 
 struct CameraConfigSpec {

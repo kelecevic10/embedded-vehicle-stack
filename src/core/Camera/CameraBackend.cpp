@@ -578,9 +578,14 @@ bool CameraBackend::makeOwnedFrameData(const FrameView &frameView, FrameData &fr
     frameData.height = frameView.height;
     frameData.pixelFormat = frameView.pixelFormat;
 
+    if (frameView.planes.empty()) {
+        reportError("Cannot make owned frame data: frame has no planes.");
+        return false;
+    }
+
     frameData.planes.reserve(frameView.planes.size());
-    for (const auto& planeView : frameView.planes) {
-        FramePlaneData planeData {};
+    for (size_t i = 0; i < frameView.planes.size(); i++) {
+        const auto& planeView = frameView.planes[i];
 
         if (planeView.data == nullptr) {
             reportError("Cannot make owned frame data: plane data is null.");
@@ -597,9 +602,28 @@ bool CameraBackend::makeOwnedFrameData(const FrameView &frameView, FrameData &fr
             return false;
         }
 
+        FramePlaneData planeData {};
+
+
         // copy metadata
         planeData.bytesUsed = planeView.bytesUsed;
         planeData.stride = planeView.stride;
+        if (frameView.pixelFormat == "YUV420" && frameView.planes.size() == 3) {
+            if (i == 0) {
+                planeData.width = frameView.width;
+                planeData.height = frameView.height;
+                planeData.stride = frameView.width;
+            } else {
+                planeData.width = frameView.width / 2;
+                planeData.height = frameView.height / 2;
+                planeData.stride = frameView.width / 2;
+            }
+        }
+        else {
+            planeData.width = frameView.width;
+            planeData.height = frameView.height;
+            planeData.stride = planeView.stride;
+        }
 
         // copy data
         planeData.data.resize(planeView.bytesUsed);

@@ -75,6 +75,8 @@ private:
     void updateState(const CameraState& to);
     void workerLoop();
 
+    bool encodeJpeg(const FrameData& frame, EncodedFrame& encodedFrame, int quality = 90);
+    bool saveEncodedFrameToDisk(const EncodedFrame& encodedFrame);
 };
 
 

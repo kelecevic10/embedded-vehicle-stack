@@ -4,9 +4,11 @@
 
 #include "Camera.h"
 
+#include <cstring>
 #include <filesystem>
-
 #include "utils/logger/Logger.h"
+#include <turbojpeg.h>
+#include <fstream>
 
 static bool saveRawSnapshotToDisk(const FrameData& frame) {
     namespace fs = std::filesystem;
@@ -193,8 +195,8 @@ bool Camera::start() {
         ));
     });
 
-    backend_.setSnapshotFrameCallback([](const FrameData&& frame) {
-       Logger::info(std::format(
+    backend_.setSnapshotFrameCallback([this](const FrameData&& frame) {
+        Logger::info(std::format(
             "Camera SNAPSHOT frame received | seq={} | ts={}ns | {}x{} | format={} | planes={}",
             frame.sequenceNumber,
             frame.timestampNs,
@@ -204,9 +206,17 @@ bool Camera::start() {
             frame.planes.size()
         ));
 
-        if (!saveRawSnapshotToDisk(frame)) {
-            Logger::error("Failed to save raw snapshot to disk.");
+        EncodedFrame encodedFrame {};
+        if (!encodeJpeg(frame, encodedFrame, 90)) {
+            Logger::error("Camera: JPEG encoding failed");
+            return;
         }
+
+        if (!saveEncodedFrameToDisk(encodedFrame)) {
+            Logger::error("Camera: failed to save JPEG snapshot");
+            return;
+        }
+
     });
 
     backend_.setErrorCallback([this](const std::string& error) {
@@ -419,6 +429,140 @@ void Camera::workerLoop() {
     }
 }
 
+bool Camera::encodeJpeg(const FrameData &frame, EncodedFrame &encodedFrame, int quality) {
+    if (frame.pixelFormat != "YUV420") {
+        Logger::error(std::format(
+            "Camera: only YUV420 is supported for encoding, unsupported pixel format {}",
+            frame.pixelFormat
+        ));
+        return false;
+    }
+
+    if (frame.planes.size() != 3) {
+        Logger::error(std::format(
+            "Camera: only YUV420 is supported for encoding, unsupported number of planes {}",
+            frame.planes.size()
+        ));
+        return false;
+    }
+
+    const auto& yPlane = frame.planes[0];
+    const auto& uPlane = frame.planes[1];
+    const auto& vPlane = frame.planes[2];
+
+    if (yPlane.data.empty() || uPlane.data.empty() || vPlane.data.empty()) {
+        Logger::error("JPEG encoding failed: one or more YUV planes are empty");
+        return false;
+    }
+
+    tjhandle compressor = tjInitCompress();
+    if (!compressor) {
+        Logger::error("JPEG encoding failed: tjInitCompress failed");
+        return false;
+    }
+
+    const unsigned char* planes[3] = {
+        reinterpret_cast<const unsigned char*>(yPlane.data.data()),
+        reinterpret_cast<const unsigned char*>(uPlane.data.data()),
+        reinterpret_cast<const unsigned char*>(vPlane.data.data()),
+    };
+
+    Logger::error(std::format("STRIDES: Y: {}, U: {}, V: {}", yPlane.stride, uPlane.stride, vPlane.stride));
+
+    const int strides[3] = {
+        static_cast<int>(yPlane.stride),
+        static_cast<int>(uPlane.stride),
+        static_cast<int>(vPlane.stride),
+    };
+
+    unsigned char* jpegBuffer = nullptr;
+    unsigned long jpegBufferSize = 0;
+
+    const int result = tjCompressFromYUVPlanes(
+        compressor,
+        planes,
+        static_cast<int>(frame.width),
+        strides,
+        static_cast<int>(frame.height),
+        TJSAMP_420,
+        &jpegBuffer,
+        &jpegBufferSize,
+        quality,
+        TJFLAG_FASTDCT
+    );
+
+    if (result != 0) {
+        Logger::error(std::format(
+            "JPEG encoding failed: tjCompressFromYUVPlanes failed with error {}",
+            tjGetErrorStr2(compressor)
+        ));
+        tjDestroy(compressor);
+        if (jpegBuffer) {
+            tjFree(jpegBuffer);
+        }
+        return false;
+    }
+
+    encodedFrame = EncodedFrame {};
+    encodedFrame.type = frame.type;
+    encodedFrame.sequenceNumber = frame.sequenceNumber;
+    encodedFrame.timestampNs = frame.timestampNs;
+    encodedFrame.width = frame.width;
+    encodedFrame.height = frame.height;
+    encodedFrame.format = "jpeg";
+
+    encodedFrame.data.resize(jpegBufferSize);
+    std::memcpy(
+        encodedFrame.data.data(),
+        jpegBuffer,
+        jpegBufferSize
+    );
+
+    tjFree(jpegBuffer);
+    tjDestroy(compressor);
+
+    return true;
+}
+
+bool Camera::saveEncodedFrameToDisk(const EncodedFrame &encodedFrame) {
+    namespace fs = std::filesystem;
+
+    const fs::path snapshotsDir = "../Images";
+    if (!fs::exists(snapshotsDir)) {
+        if (!fs::create_directory(snapshotsDir)) {
+            Logger::error("Failed to create snapshots directory.");
+            return false;
+        }
+    }
+
+    const fs::path imagePath = snapshotsDir / std::format("frame_{}.{}", encodedFrame.sequenceNumber, encodedFrame.format);
+    std::ofstream imageFile(imagePath, std::ios::binary);
+
+    if (!imageFile.is_open()) {
+        Logger::error(std::format("Failed to open image file: {}", imagePath.string()));
+        return false;
+    }
+
+    imageFile.write(
+        reinterpret_cast<const char*>(encodedFrame.data.data()),
+        static_cast<std::streamsize>(encodedFrame.data.size())
+    );
+
+    if (!imageFile) {
+        Logger::error(std::format("Failed to write image file: {}", imagePath.string()));
+        return false;
+    }
+
+    Logger::info(std::format(
+        "JPEG snapshot saved | path = {} | size = {} bytes | {}x{}",
+        imagePath.string(),
+        encodedFrame.data.size(),
+        encodedFrame.width,
+        encodedFrame.height
+    ));
+
+    return true;
+}
 
 
 bool Camera::takeSnapShot() {
