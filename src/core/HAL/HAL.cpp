@@ -90,6 +90,7 @@ bool HAL::start() {
 
     if (handlers_.empty())
         registerHandlers();
+
     bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
     startEventLoop();
 
