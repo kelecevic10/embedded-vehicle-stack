@@ -6,18 +6,60 @@
 
 #include "utils/logger/Logger.h"
 
-bool LED::turnOn() const {
-    if (write(PinState::HIGH)) {
+bool LED::init() {
+    if (isInitialized()) {
         return true;
     }
-    Logger::error("Failed to turn on LED");
-    return false;
+
+    if (!pin_.init()) {
+        Logger::error(std::format("Failed to initialize {} pin", name()));
+        return false;
+    }
+
+    initialized_ = true;
+    return true;
 }
 
-bool LED::turnOff() const {
-    if (write(PinState::LOW)) {
+bool LED::shutdown() {
+    if (!isInitialized()) {
         return true;
     }
-    Logger::error("Failed to turn off LED");
-    return false;
+
+    if (!turnOff()) {
+        Logger::error(std::format("Failed to turn off {} while shutting down the Device", name()));
+        return false;
+    }
+
+    if (!pin_.shutdown()) {
+        Logger::error(std::format("Failed to shutdown {} LED pin", name()));
+        return false;
+    }
+    initialized_ = false;
+    return true;
+}
+
+bool LED::turnOn() {
+    if (!isInitialized()) {
+        Logger::error(std::format("{} is not initialized - cannot be turned on", name()));
+        return false;
+    }
+
+    if (!pin_.setHigh()) {
+        Logger::error(std::format("Failed to turn on {} LED", name()));
+        return false;
+    }
+    return true;
+}
+
+bool LED::turnOff() {
+    if (!isInitialized()) {
+        Logger::error(std::format("{} is not initialized - cannot be turned off", name()));
+        return false;
+    }
+
+    if (!pin_.setLow()) {
+        Logger::error(std::format("Failed to turn off {}", name()));
+        return false;
+    }
+    return true;
 }

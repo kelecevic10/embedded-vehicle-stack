@@ -5,31 +5,29 @@
 #ifndef EMBEDDED_VEHICLE_STACK_LED_H
 #define EMBEDDED_VEHICLE_STACK_LED_H
 #include "core/HAL/Devices/Device.h"
-#include <gpiod.hpp>
-
 #include "utils/logger/Logger.h"
+#include "core/HAL/Pins/Pins.h"
+
 using hal::GpioManager; using hal::OutputPinConfig;
 
-class LED : public Actuator {
+class LED : public Device {
 public:
-    LED(
-        const unsigned int pin,
-        std::string name,
-        GpioManager* gpioManager,
-        OutputPinConfig config
-        )
-        : Actuator(pin, std::move(name), gpioManager, std::move(config))
-    {
-
-    };
-
+    LED(std::string name, GpioManager& gpioManager, OutputPinConfig config)
+        : Device(std::move(name)), pin_(gpioManager, std::move(config)) { };
     ~LED() override = default;
 
-    bool turnOn() const;
-    bool turnOff() const;
+    bool init() override;
+    bool shutdown() override;
+
+    bool turnOn();
+    bool turnOff();
 
 private:
-    // it has DeviceHealth health_ inherited
+//  Inherited:
+//  std::string name_;
+//  DeviceHealth health_ {DeviceHealth::OK};
+//  bool initialized_ = false;
+    DigitalOutputPin pin_;
 };
 
 
