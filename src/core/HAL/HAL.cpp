@@ -12,32 +12,30 @@ bool HAL::registerDevices() {
     using namespace hal;
 
     OutputPinConfig config_led_ok {
-        .pin = 5,
+        .pin = 17,
         .consumer = "LED_OK",
         .activeLow = false,
         .initialValue = PinState::LOW
     };
 
     greenLed = createDevice<LED>(
-        config_led_ok.pin,
-        std::move(config_led_ok.consumer),
-        gpioManager_.get(),
+        config_led_ok.consumer,
+        *gpioManager_,
         std::move(config_led_ok)
         );
 
     if (!greenLed) return false;
 
     OutputPinConfig config_led_error {
-        .pin = 17,
+        .pin = 5,
         .consumer = "LED_ERROR",
         .activeLow = false,
         .initialValue = PinState::LOW
     };
 
     redLed = createDevice<LED>(
-        config_led_error.pin,
-        std::move(config_led_error.consumer),
-        gpioManager_.get(),
+        config_led_error.consumer,
+        *gpioManager_,
         std::move(config_led_error)
         );
 
@@ -51,14 +49,36 @@ bool HAL::registerDevices() {
     };
 
     yellowLed = createDevice<LED>(
-        config_led_warning.pin,
-        std::move(config_led_warning.consumer),
-        gpioManager_.get(),
+        config_led_warning.consumer,
+        *gpioManager_,
         std::move(config_led_warning)
         );
 
     if (!yellowLed) return false;
 
+    return true;
+}
+
+bool HAL::initDevices() {
+    for (auto& device : devices_) {
+        if (!device->init()) {
+            Logger::error(std::format("Could not initialize device {}", device->name()));
+            return false;
+        }
+    }
+    Logger::info("All devices initialized successfully!");
+    return true;
+}
+
+bool HAL::shutdownDevices() {
+    for (auto& device : devices_) {
+        if (!device->shutdown()) {
+            Logger::error(std::format("Could not shutdown device {}", device->name()));
+            return false;
+        }
+    }
+
+    Logger::info("All devices shutdown successfully!");
     return true;
 }
 
@@ -88,6 +108,11 @@ bool HAL::start() {
         }
     }
 
+    if (!initDevices()) {
+        Logger::error("HAL: Could not initialize devices!");
+        return false;
+    }
+
     if (handlers_.empty())
         registerHandlers();
 
@@ -114,6 +139,17 @@ bool HAL::stop() {
     // stopping EventListener thread that listens to system
     bus_->unsubscribe(EventType::DIAGNOSTICS_UPDATE, this);
     stopEventLoop();
+
+    if (!shutdownDevices()) {
+        Logger::error("HAL: Could not shutdown devices!");
+        return false;
+    }
+
+    if (activeDiagLed) {
+        activeDiagLed->turnOff();
+        activeDiagLed = nullptr;
+    }
+
     return true;
 }
 
@@ -148,24 +184,24 @@ void HAL::registerHandlers() {
                 if (activeDiagLed != greenLed) {
                     if (activeDiagLed)
                         activeDiagLed->turnOff();
-                    greenLed->turnOn();
-                    activeDiagLed = greenLed;
+                    if (greenLed->turnOn())
+                        activeDiagLed = greenLed;
                 }
                 break;
             case DiagHealth::WARNING:
                 if (activeDiagLed != yellowLed) {
                     if (activeDiagLed)
                         activeDiagLed->turnOff();
-                    yellowLed->turnOn();
-                    activeDiagLed = yellowLed;
+                    if (yellowLed->turnOn())
+                        activeDiagLed = yellowLed;
                 }
                 break;
             case DiagHealth::ERROR:
                 if (activeDiagLed != redLed) {
                     if (activeDiagLed)
                         activeDiagLed->turnOff();
-                    redLed->turnOn();
-                    activeDiagLed = redLed;
+                    if (redLed->turnOn())
+                        activeDiagLed = redLed;
                 }
                 break;
             default:

@@ -467,8 +467,6 @@ bool Camera::encodeJpeg(const FrameData &frame, EncodedFrame &encodedFrame, int 
         reinterpret_cast<const unsigned char*>(vPlane.data.data()),
     };
 
-    Logger::error(std::format("STRIDES: Y: {}, U: {}, V: {}", yPlane.stride, uPlane.stride, vPlane.stride));
-
     const int strides[3] = {
         static_cast<int>(yPlane.stride),
         static_cast<int>(uPlane.stride),

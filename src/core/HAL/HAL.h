@@ -48,6 +48,8 @@ private:
     std::vector<std::unique_ptr<Device>> devices_;
 
     bool registerDevices();
+    bool initDevices();
+    bool shutdownDevices();
 
     LED* greenLed = nullptr;
     LED* redLed = nullptr;
