@@ -10,7 +10,7 @@
 #include "core/MessageBus/MessageBus.h"
 #include "core/System/Subsystem.h"
 #include "Devices/Device.h"
-#include "Devices/LED.h"
+#include "Devices/LED/LED.h"
 
 using hal::GpioManager;
 

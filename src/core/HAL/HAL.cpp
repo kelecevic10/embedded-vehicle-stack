@@ -6,7 +6,7 @@
 
 #include <csignal>
 
-#include "Devices/LED.h"
+#include "Devices/LED/LED.h"
 
 bool HAL::registerDevices() {
     using namespace hal;
