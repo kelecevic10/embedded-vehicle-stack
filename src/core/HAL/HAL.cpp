@@ -85,13 +85,14 @@ bool HAL::registerDevices() {
     };
 
     auto leftMotorConf = MotorConfig {
-        .rEnable = rEnableConf,
-        .lEnable = lEnableConf,
-        .rPwm = rPwmConf,
-        .lPwm = lPwmConf
+        .rEnable = std::move(rEnableConf),
+        .lEnable = std::move(lEnableConf),
+        .rPwm = std::move(rPwmConf),
+        .lPwm = std::move(lPwmConf)
     };
 
     leftMotor_ = createDevice<Motor>(
+        MotorId::LEFT,
         "L_MOTOR",
         *gpioManager_,
         std::move(leftMotorConf)
@@ -160,8 +161,7 @@ bool HAL::start() {
         registerHandlers();
 
     bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
-    bus_->subscribe(EventType::MOTOR_RUN_FORWARD, this);
-    bus_->subscribe(EventType::MOTOR_RUN_BACKWARD, this);
+    bus_->subscribe(EventType::MOTOR_DRIVE, this);
     bus_->subscribe(EventType::MOTOR_STOP, this);
 
     startEventLoop();
@@ -185,8 +185,7 @@ bool HAL::stop() {
 
     // stopping EventListener thread that listens to system
     bus_->unsubscribe(EventType::DIAGNOSTICS_UPDATE, this);
-    bus_->unsubscribe(EventType::MOTOR_RUN_FORWARD, this);
-    bus_->unsubscribe(EventType::MOTOR_RUN_BACKWARD, this);
+    bus_->unsubscribe(EventType::MOTOR_DRIVE, this);
     bus_->unsubscribe(EventType::MOTOR_STOP, this);
 
     stopEventLoop();
@@ -260,27 +259,48 @@ void HAL::registerHandlers() {
         }
     });
 
-    subscribe(EventType::MOTOR_RUN_FORWARD, [this](const Event& e) {
+    subscribe(EventType::MOTOR_DRIVE, [this](const Event& e) {
         const auto* payload = std::get_if<MotorCommandPayload>(&e.payload);
         if (!payload) {
             Logger::error("Could not get motor command payload!");
             return;
         }
 
-        leftMotor_->drive(payload->direction, payload->dutyCycle);
+        switch (payload->motorId) {
+            case MotorId::LEFT:
+                if (leftMotor_) leftMotor_->drive(payload->direction, payload->dutyCycle);
+                break;
+            case MotorId::RIGHT:
+                // if (rightMotor_) rightMotor_->drive(payload->direction, payload->dutyCycle);
+                break;
+            case MotorId::BOTH:
+                if (leftMotor_) leftMotor_->drive(payload->direction, payload->dutyCycle);
+                // if (rightMotor_) rightMotor_->drive(payload->direction, payload->dutyCycle);
+                break;
+        }
     });
 
-    subscribe(EventType::MOTOR_RUN_BACKWARD, [this](const Event& e) {
-        const auto* payload = std::get_if<MotorCommandPayload>(&e.payload);
+    subscribe(EventType::MOTOR_STOP, [this](const Event& e) {
+        const auto* payload = std::get_if<MotorId>(&e.payload);
         if (!payload) {
-            Logger::error("Could not get motor command payload!");
+            Logger::error("HAL: MOTOR_STOP event has invalid MotorId payload");
             return;
         }
 
-        leftMotor_->drive(payload->direction, payload->dutyCycle);
-    });
-
-    subscribe(EventType::MOTOR_STOP, [this](const Event&) {
-        leftMotor_->stop();
+        switch (*payload) {
+            case MotorId::LEFT:
+                if (leftMotor_) leftMotor_->stop();
+                break;
+            case MotorId::RIGHT:
+                // if (rightMotor_) rightMotor_->stop();
+                break;
+            case MotorId::BOTH:
+                if (leftMotor_) leftMotor_->stop();
+                // if (rightMotor_) rightMotor_->stop();
+                break;
+            default:
+                Logger::error("HAL: unknown MotorId in MOTOR_STOP event");
+                break;
+        }
     });
 }

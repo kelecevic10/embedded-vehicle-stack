@@ -29,9 +29,8 @@ enum class EventType {
     CAMERA_START_PREVIEW,
     CAMERA_STOP_PREVIEW,
     // Motor
-    MOTOR_RUN_FORWARD,
-    MOTOR_RUN_BACKWARD,
-    MOTOR_STOP
+    MOTOR_DRIVE,
+    MOTOR_STOP,
 };
 
 inline std::string EventTypeToString(const EventType t) {
@@ -49,9 +48,16 @@ inline std::string EventTypeToString(const EventType t) {
     }
 }
 
+enum class MotorId {
+    LEFT,
+    RIGHT,
+    BOTH
+};
+
 struct MotorCommandPayload {
+    MotorId motorId;
     MotorDirection direction;
-    float dutyCycle {0.0f};
+    float dutyCycle;
 };
 
 using EventPayload = std::variant<
@@ -59,14 +65,15 @@ using EventPayload = std::variant<
     std::string,
     int,
     SnapShot,
-    MotorCommandPayload
+    MotorCommandPayload,
+    MotorId
 >;
 
 struct Event {
     EventType type;
+    EventPayload payload;
     int priority;
     std::string timestamp;
-    EventPayload payload;
 
     // we move payload because it can contain very large data -> this is much more effective
     // priority politics:
@@ -85,7 +92,6 @@ struct Event {
 // multiple subscribers. Immutability prevents accidental
 // modification of the shared event state and makes dispatch safer.
 using EventPtr = std::shared_ptr<const Event>;
-
 struct EventComparator {
     bool operator()(const EventPtr& a, const EventPtr& b) const {
         // returns true if a is less (important) than b
