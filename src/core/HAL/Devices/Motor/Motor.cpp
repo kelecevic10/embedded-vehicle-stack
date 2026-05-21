@@ -4,21 +4,16 @@
 
 #include "Motor.h"
 
-Motor::Motor(std::string name, GpioManager &gpioManager, MotorConfig config)
-    : Device(std::move(name))
+Motor::Motor(const MotorId id, std::string name, GpioManager &gpioManager, MotorConfig config)
+    : Device(std::move(name)), id_(id)
 {
-
-    auto rEnableConf = config.rEnable;
-    auto lEnableConf = config.lEnable;
-    auto rPwmConf = config.rPwm;
-    auto lPwmConf = config.lPwm;
 
     driver_ = std::make_unique<MotorDriver>(
         gpioManager,
-        rEnableConf,
-        lEnableConf,
-        rPwmConf,
-        lPwmConf
+        std::move(config.rEnable),
+        std::move(config.lEnable),
+        std::move(config.rPwm),
+        std::move(config.lPwm)
     );
 }
 
@@ -35,11 +30,13 @@ bool Motor::init() {
     if (!driver_->init()) {
         Logger::error(std::format("Failed to initialize Motor {}", name()));
         state_ = MotorState::Faulted;
+        health_ = DeviceHealth::ERROR;
         return false;
     }
 
     initialized_ = true;
     state_ = MotorState::Stopped;
+    health_ = DeviceHealth::OK;
 
     return true;
 }
@@ -53,30 +50,32 @@ bool Motor::shutdown() {
     if (!driver_->shutdown()) {
         Logger::error(std::format("Failed to shutdown Motor {}", name()));
         state_ = MotorState::Faulted;
+        health_ = DeviceHealth::ERROR;
         return false;
     }
 
     initialized_ = false;
     state_ = MotorState::Uninitialized;
+    health_ = DeviceHealth::OK;
 
     return true;
 }
 
-void Motor::drive(MotorDirection direction, float dutyCycle) {
+void Motor::drive(const MotorDirection direction, const float speed) {
     if (!isInitialized()) {
         Logger::error(std::format("Motor {} is not initialized - drive ignored", name()));
         return;
     }
 
-    if (state_ == MotorState::Uninitialized || state_ == MotorState::Faulted) {
-        Logger::error(std::format("Motor {} is uninitialized or  in faulted state - cannot be driven", name()));
-        state_ = MotorState::Faulted;
+    if (state_ == MotorState::Faulted) {
+        Logger::error(std::format("Motor {} is in faulted state - cannot be driven", name()));
+        health_ = DeviceHealth::ERROR;
         return;
     }
 
-    driver_->drive(direction, dutyCycle);
+    driver_->drive(direction, speed);
 
-    if (dutyCycle <= 0.0f) {
+    if (driver_->dutyCycle() <= 0.0f) {
         state_ = MotorState::Stopped;
         return;
     }
@@ -85,6 +84,8 @@ void Motor::drive(MotorDirection direction, float dutyCycle) {
         direction == MotorDirection::FORWARD ?
         MotorState::RunningForward :
         MotorState::RunningBackward;
+
+    health_ = DeviceHealth::OK;
 }
 
 void Motor::stop() {
@@ -92,8 +93,13 @@ void Motor::stop() {
         Logger::warning(std::format("Motor {} is not initialized - stop ignored", name()));
         return;
     }
+
     driver_->stop();
-    state_ = MotorState::Stopped;
+
+    if (state_ == MotorState::Faulted) {
+        state_ = MotorState::Stopped;
+        health_ = DeviceHealth::OK;
+    }
 }
 
 MotorDirection Motor::direction() const {
@@ -106,4 +112,8 @@ float Motor::dutyCycle() const {
 
 bool Motor::isRunning() const {
     return state_ == MotorState::RunningForward || state_ == MotorState::RunningBackward;
+}
+
+MotorId Motor::id() const {
+    return id_;
 }
