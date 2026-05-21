@@ -22,6 +22,8 @@ Motor::~Motor() {
 }
 
 bool Motor::init() {
+
+    Logger::info(std::format("Motor {}: initializing", name()));
     if (initialized_) {
         Logger::warning(std::format("Motor {} already initialized", name()));
         return true;
@@ -38,14 +40,18 @@ bool Motor::init() {
     state_ = MotorState::Stopped;
     health_ = DeviceHealth::OK;
 
+    Logger::info(std::format("Motor {}: initialized successfully", name()));
+
     return true;
 }
 
 bool Motor::shutdown() {
-    if (!initialized_) {
-        Logger::warning(std::format("Motor {} already shutdown", name()));
+
+    if (!initialized_ && state_ == MotorState::Uninitialized) {
         return true;
     }
+
+    Logger::info(std::format("Motor {}: shutting down", name()));
 
     if (!driver_->shutdown()) {
         Logger::error(std::format("Failed to shutdown Motor {}", name()));
@@ -58,6 +64,7 @@ bool Motor::shutdown() {
     state_ = MotorState::Uninitialized;
     health_ = DeviceHealth::OK;
 
+    Logger::info(std::format("Motor {}: shutdown complete", name()));
     return true;
 }
 
@@ -72,6 +79,13 @@ void Motor::drive(const MotorDirection direction, const float speed) {
         health_ = DeviceHealth::ERROR;
         return;
     }
+
+    Logger::info(std::format(
+    "Motor {}: drive requested direction={}, dutyCycle={:.2f}",
+        name(),
+        toString(direction),
+        dutyCycle()
+    ));
 
     driver_->drive(direction, speed);
 
@@ -94,6 +108,7 @@ void Motor::stop() {
         return;
     }
 
+    Logger::info(std::format("Motor {}: stop requested", name()));
     driver_->stop();
 
     if (state_ == MotorState::Faulted) {
