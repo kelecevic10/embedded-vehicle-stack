@@ -48,8 +48,6 @@ private:
     DigitalOutputPin lEnablePin_;
     DigitalOutputPin rPwmPin_;
     DigitalOutputPin lPwmPin_;
-
-
     MotorDirection direction_ {MotorDirection::FORWARD};
     float dutyCycle_ {0.0f};
     bool initialized_ {false};

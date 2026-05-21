@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "../../utils/enums/DiagTypes.h"
+#include "core/HAL/Devices/Motor/MotorDriver.h"
 #include "utils/TimeUtils.h"
 
 
@@ -21,13 +22,16 @@ enum class EventType {
     DIAGNOSTICS_UPDATE,
     DIAGNOSTICS_WARNING,
     DIAGNOSTICS_ALERT,
-
     // Camera
     CAMERA_TAKE_SNAPSHOT,
     CAMERA_START_RECORDING,
     CAMERA_STOP_RECORDING,
     CAMERA_START_PREVIEW,
     CAMERA_STOP_PREVIEW,
+    // Motor
+    MOTOR_RUN_FORWARD,
+    MOTOR_RUN_BACKWARD,
+    MOTOR_STOP
 };
 
 inline std::string EventTypeToString(const EventType t) {
@@ -45,11 +49,17 @@ inline std::string EventTypeToString(const EventType t) {
     }
 }
 
+struct MotorCommandPayload {
+    MotorDirection direction;
+    float dutyCycle {0.0f};
+};
+
 using EventPayload = std::variant<
     std::monostate,   // empty, signal only
     std::string,
     int,
-    SnapShot
+    SnapShot,
+    MotorCommandPayload
 >;
 
 struct Event {

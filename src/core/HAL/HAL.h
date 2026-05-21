@@ -11,6 +11,7 @@
 #include "core/System/Subsystem.h"
 #include "Devices/Device.h"
 #include "Devices/LED/LED.h"
+#include "Devices/Motor/Motor.h"
 
 using hal::GpioManager;
 
@@ -51,10 +52,11 @@ private:
     bool initDevices();
     bool shutdownDevices();
 
-    LED* greenLed = nullptr;
-    LED* redLed = nullptr;
-    LED* yellowLed = nullptr;
-    LED* activeDiagLed = nullptr;
+    LED* greenLed_ = nullptr;
+    LED* redLed_ = nullptr;
+    LED* yellowLed_ = nullptr;
+    LED* activeDiagLed_ = nullptr;
+    Motor* leftMotor_ = nullptr;
 
     void loop();
 };

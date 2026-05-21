@@ -12,19 +12,19 @@ bool HAL::registerDevices() {
     using namespace hal;
 
     OutputPinConfig config_led_ok {
-        .pin = 17,
+        .pin = 4,
         .consumer = "LED_OK",
         .activeLow = false,
         .initialValue = PinState::LOW
     };
 
-    greenLed = createDevice<LED>(
+    greenLed_ = createDevice<LED>(
         config_led_ok.consumer,
         *gpioManager_,
         std::move(config_led_ok)
-        );
+    );
 
-    if (!greenLed) return false;
+    if (!greenLed_) return false;
 
     OutputPinConfig config_led_error {
         .pin = 5,
@@ -33,13 +33,13 @@ bool HAL::registerDevices() {
         .initialValue = PinState::LOW
     };
 
-    redLed = createDevice<LED>(
+    redLed_ = createDevice<LED>(
         config_led_error.consumer,
         *gpioManager_,
         std::move(config_led_error)
-        );
+    );
 
-    if (!redLed) return false;
+    if (!redLed_) return false;
 
     OutputPinConfig config_led_warning {
         .pin = 6,
@@ -48,13 +48,56 @@ bool HAL::registerDevices() {
         .initialValue = PinState::LOW
     };
 
-    yellowLed = createDevice<LED>(
+    yellowLed_ = createDevice<LED>(
         config_led_warning.consumer,
         *gpioManager_,
         std::move(config_led_warning)
-        );
+    );
 
-    if (!yellowLed) return false;
+    if (!yellowLed_) return false;
+
+    OutputPinConfig rEnableConf {
+        .pin = 17,
+        .consumer = "MOTOR_R_EN",
+        .activeLow = false,
+        .initialValue = PinState::LOW
+    };
+
+    OutputPinConfig lEnableConf {
+        .pin = 27,
+        .consumer = "MOTOR_L_EN",
+        .activeLow = false,
+        .initialValue = PinState::LOW
+    };
+
+    OutputPinConfig rPwmConf {
+        .pin = 22,
+        .consumer = "MOTOR_R_PWM",
+        .activeLow = false,
+        .initialValue = PinState::LOW
+    };
+
+    OutputPinConfig lPwmConf {
+        .pin = 23,
+        .consumer = "MOTOR_L_PWM",
+        .activeLow = false,
+        .initialValue = PinState::LOW
+    };
+
+    auto leftMotorConf = MotorConfig {
+        .rEnable = rEnableConf,
+        .lEnable = lEnableConf,
+        .rPwm = rPwmConf,
+        .lPwm = lPwmConf
+    };
+
+    leftMotor_ = createDevice<Motor>(
+        "L_MOTOR",
+        *gpioManager_,
+        std::move(leftMotorConf)
+    );
+
+    if (!leftMotor_) return false;
 
     return true;
 }
@@ -117,6 +160,10 @@ bool HAL::start() {
         registerHandlers();
 
     bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
+    bus_->subscribe(EventType::MOTOR_RUN_FORWARD, this);
+    bus_->subscribe(EventType::MOTOR_RUN_BACKWARD, this);
+    bus_->subscribe(EventType::MOTOR_STOP, this);
+
     startEventLoop();
 
     running_.store(true);
@@ -138,6 +185,10 @@ bool HAL::stop() {
 
     // stopping EventListener thread that listens to system
     bus_->unsubscribe(EventType::DIAGNOSTICS_UPDATE, this);
+    bus_->unsubscribe(EventType::MOTOR_RUN_FORWARD, this);
+    bus_->unsubscribe(EventType::MOTOR_RUN_BACKWARD, this);
+    bus_->unsubscribe(EventType::MOTOR_STOP, this);
+
     stopEventLoop();
 
     if (!shutdownDevices()) {
@@ -145,9 +196,9 @@ bool HAL::stop() {
         return false;
     }
 
-    if (activeDiagLed) {
-        activeDiagLed->turnOff();
-        activeDiagLed = nullptr;
+    if (activeDiagLed_) {
+        activeDiagLed_->turnOff();
+        activeDiagLed_ = nullptr;
     }
 
     return true;
@@ -157,8 +208,8 @@ HAL::~HAL() {
     if (running_.load()) {
         HAL::stop();
     }
-    if (activeDiagLed != nullptr)
-        activeDiagLed->turnOff();
+    if (activeDiagLed_ != nullptr)
+        activeDiagLed_->turnOff();
 }
 
 
@@ -181,31 +232,55 @@ void HAL::registerHandlers() {
         const SnapShot snapshot = std::get<SnapShot>(e.payload);
         switch (snapshot.diag_health) {
             case DiagHealth::OK:
-                if (activeDiagLed != greenLed) {
-                    if (activeDiagLed)
-                        activeDiagLed->turnOff();
-                    if (greenLed->turnOn())
-                        activeDiagLed = greenLed;
+                if (activeDiagLed_ != greenLed_) {
+                    if (activeDiagLed_)
+                        activeDiagLed_->turnOff();
+                    if (greenLed_->turnOn())
+                        activeDiagLed_ = greenLed_;
                 }
                 break;
             case DiagHealth::WARNING:
-                if (activeDiagLed != yellowLed) {
-                    if (activeDiagLed)
-                        activeDiagLed->turnOff();
-                    if (yellowLed->turnOn())
-                        activeDiagLed = yellowLed;
+                if (activeDiagLed_ != yellowLed_) {
+                    if (activeDiagLed_)
+                        activeDiagLed_->turnOff();
+                    if (yellowLed_->turnOn())
+                        activeDiagLed_ = yellowLed_;
                 }
                 break;
             case DiagHealth::ERROR:
-                if (activeDiagLed != redLed) {
-                    if (activeDiagLed)
-                        activeDiagLed->turnOff();
-                    if (redLed->turnOn())
-                        activeDiagLed = redLed;
+                if (activeDiagLed_ != redLed_) {
+                    if (activeDiagLed_)
+                        activeDiagLed_->turnOff();
+                    if (redLed_->turnOn())
+                        activeDiagLed_ = redLed_;
                 }
                 break;
             default:
                 break;
         }
+    });
+
+    subscribe(EventType::MOTOR_RUN_FORWARD, [this](const Event& e) {
+        const auto* payload = std::get_if<MotorCommandPayload>(&e.payload);
+        if (!payload) {
+            Logger::error("Could not get motor command payload!");
+            return;
+        }
+
+        leftMotor_->drive(payload->direction, payload->dutyCycle);
+    });
+
+    subscribe(EventType::MOTOR_RUN_BACKWARD, [this](const Event& e) {
+        const auto* payload = std::get_if<MotorCommandPayload>(&e.payload);
+        if (!payload) {
+            Logger::error("Could not get motor command payload!");
+            return;
+        }
+
+        leftMotor_->drive(payload->direction, payload->dutyCycle);
+    });
+
+    subscribe(EventType::MOTOR_STOP, [this](const Event&) {
+        leftMotor_->stop();
     });
 }
