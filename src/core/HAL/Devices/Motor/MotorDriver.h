@@ -6,11 +6,7 @@
 #define EMBEDDED_VEHICLE_STACK_MOTORDRIVER_H
 
 #include "core/HAL/Pins/Pins.h"
-
-enum class MotorDirection {
-    FORWARD,
-    BACKWARD
-};
+#include "core/HAL/Devices/Motor/MotorTypes.h"
 
 class MotorDriver {
 public:
@@ -40,7 +36,7 @@ public:
     [[nodiscard]] float dutyCycle() const;
 
 private:
-    bool forcePinsLow();
+    bool setPinsLow();
     bool applyDigitalDrive();
 
 private:
@@ -48,6 +44,7 @@ private:
     DigitalOutputPin lEnablePin_;
     DigitalOutputPin rPwmPin_;
     DigitalOutputPin lPwmPin_;
+
     MotorDirection direction_ {MotorDirection::FORWARD};
     float dutyCycle_ {0.0f};
     bool initialized_ {false};

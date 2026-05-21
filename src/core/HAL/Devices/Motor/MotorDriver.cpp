@@ -56,7 +56,7 @@ bool MotorDriver::init() {
         return false;
     }
 
-    if (!forcePinsLow()) {
+    if (!setPinsLow()) {
         Logger::error("MotorDriver: could not set motor pins to safe LOW state during initialization");
         shutdown();
         return false;
@@ -160,7 +160,7 @@ void MotorDriver::stop() {
         return;
     }
 
-    if (!forcePinsLow()) {
+    if (!setPinsLow()) {
         Logger::error("MotorDriver: could not stop motor safely");
     }
 
@@ -179,7 +179,7 @@ float MotorDriver::dutyCycle() const {
     return dutyCycle_;
 }
 
-bool MotorDriver::forcePinsLow() {
+bool MotorDriver::setPinsLow() {
     bool valid = true;
 
     // Safer order: first remove drive/PWM signals, then disable the driver.
