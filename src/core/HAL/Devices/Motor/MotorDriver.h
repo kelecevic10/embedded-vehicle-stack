@@ -26,10 +26,10 @@ public:
     void setDirection(MotorDirection direction);
     void setDutyCycle(float dutyCycle); // 0.0 - 1.0
 
-    void drive(MotorDirection direction, float dutyCycle);
-    void drive(); // applies currently stored direction_ and dutyCycle_
+    bool drive(MotorDirection direction, float dutyCycle);
+    bool drive(); // applies currently stored direction_ and dutyCycle_
 
-    void stop();
+    bool stop();
 
     [[nodiscard]] bool isInitialized() const;
     [[nodiscard]] MotorDirection direction() const;

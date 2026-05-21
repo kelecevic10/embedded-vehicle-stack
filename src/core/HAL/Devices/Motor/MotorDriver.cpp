@@ -73,48 +73,38 @@ bool MotorDriver::shutdown() {
     // Important: shutdown must also work after partial init failure.
     // Therefore, it must not simply return when initialized_ == false.
 
-    if (rPwmPin_.isInitialized()) {
-        rPwmPin_.setLow();
-    }
+   bool safeLow = setPinsLow();
 
-    if (lPwmPin_.isInitialized()) {
-        lPwmPin_.setLow();
-    }
+    bool validPinShutDown = true;
 
     if (rEnablePin_.isInitialized()) {
-        rEnablePin_.setLow();
+        validPinShutDown &= rEnablePin_.shutdown();
     }
 
     if (lEnablePin_.isInitialized()) {
-        lEnablePin_.setLow();
-    }
-
-    bool valid = true;
-
-    if (rEnablePin_.isInitialized()) {
-        valid &= rEnablePin_.shutdown();
-    }
-
-    if (lEnablePin_.isInitialized()) {
-        valid &= lEnablePin_.shutdown();
+        validPinShutDown &= lEnablePin_.shutdown();
     }
 
     if (rPwmPin_.isInitialized()) {
-        valid &= rPwmPin_.shutdown();
+        validPinShutDown &= rPwmPin_.shutdown();
     }
 
     if (lPwmPin_.isInitialized()) {
-        valid &= lPwmPin_.shutdown();
+        validPinShutDown &= lPwmPin_.shutdown();
     }
 
     initialized_ = false;
     dutyCycle_ = 0.0f;
 
-    if (!valid) {
+    if (!validPinShutDown) {
         Logger::error("MotorDriver: one or more motor pins failed to shutdown");
     }
 
-    return valid;
+    if (!safeLow) {
+        Logger::error("MotorDriver: failed to force pins LOW during shutdown");
+    }
+
+    return validPinShutDown && safeLow;
 }
 
 void MotorDriver::setDirection(const MotorDirection direction) {
@@ -131,40 +121,48 @@ void MotorDriver::setDutyCycle(const float dutyCycle) {
     dutyCycle_ = clampedDutyCycle;
 }
 
-void MotorDriver::drive(const MotorDirection direction, const float dutyCycle) {
+bool MotorDriver::drive(const MotorDirection direction, const float dutyCycle) {
     setDirection(direction);
     setDutyCycle(dutyCycle);
-    drive();
+    return drive();
 }
 
-void MotorDriver::drive() {
+bool MotorDriver::drive() {
     if (!initialized_) {
         Logger::warning("MotorDriver: drive() called before initialization");
-        return;
+        return false;
     }
 
     if (dutyCycle_ <= 0.0f) {
-        stop();
-        return;
+        return stop();
     }
 
     if (!applyDigitalDrive()) {
         Logger::error("MotorDriver: could not apply digital drive command");
-        stop();
+
+        if (!stop()) {
+            Logger::error("MotorDriver: failed to restore safe state after drive failure.");
+        }
+
+        return false;
     }
+
+    return true;
 }
 
-void MotorDriver::stop() {
+bool MotorDriver::stop() {
     if (!initialized_) {
         Logger::warning("MotorDriver: stop() called before initialization");
-        return;
+        return true;
     }
 
     if (!setPinsLow()) {
         Logger::error("MotorDriver: could not stop motor safely");
+        return false;
     }
 
     setDutyCycle(0.0f);
+    return true;
 }
 
 bool MotorDriver::isInitialized() const {

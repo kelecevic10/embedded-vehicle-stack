@@ -17,8 +17,8 @@ public:
     bool init() override;
     bool shutdown() override;
 
-    void drive(MotorDirection direction, float speed);
-    void stop();
+    bool drive(MotorDirection direction, float speed);
+    bool stop();
 
     [[nodiscard]] MotorDirection direction() const;
     [[nodiscard]] float dutyCycle() const;

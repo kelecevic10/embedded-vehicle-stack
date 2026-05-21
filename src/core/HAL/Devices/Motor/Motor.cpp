@@ -46,17 +46,25 @@ bool Motor::init() {
 }
 
 bool Motor::shutdown() {
-
     if (!initialized_ && state_ == MotorState::Uninitialized) {
         return true;
     }
 
     Logger::info(std::format("Motor {}: shutting down", name()));
 
-    if (!driver_->shutdown()) {
-        Logger::error(std::format("Failed to shutdown Motor {}", name()));
+    const bool stopped = driver_->stop();
+    const bool shutdownOk = driver_->shutdown();
+
+    if (!stopped || !shutdownOk) {
+        Logger::error(std::format(
+            "Motor {}: failed to shutdown safely",
+            name()
+        ));
+
         state_ = MotorState::Faulted;
         health_ = DeviceHealth::ERROR;
+        initialized_ = false;
+
         return false;
     }
 
@@ -68,53 +76,119 @@ bool Motor::shutdown() {
     return true;
 }
 
-void Motor::drive(const MotorDirection direction, const float speed) {
-    if (!isInitialized()) {
-        Logger::error(std::format("Motor {} is not initialized - drive ignored", name()));
-        return;
+bool Motor::drive(MotorDirection direction, float dutyCycle) {
+    if (!initialized_) {
+        Logger::warning(std::format(
+            "Motor {}: drive ignored because motor is not initialized",
+            name()
+        ));
+        return false;
     }
 
     if (state_ == MotorState::Faulted) {
-        Logger::error(std::format("Motor {} is in faulted state - cannot be driven", name()));
+        Logger::error(std::format(
+            "Motor {}: drive ignored because motor is faulted",
+            name()
+        ));
         health_ = DeviceHealth::ERROR;
-        return;
+        return false;
     }
 
     Logger::info(std::format(
-    "Motor {}: drive requested direction={}, dutyCycle={:.2f}",
+        "Motor {}: drive requested direction={}, dutyCycle={:.2f}",
         name(),
         toString(direction),
-        dutyCycle()
+        dutyCycle
     ));
 
-    driver_->drive(direction, speed);
+    const auto oldState = state_;
+
+    if (!driver_->drive(direction, dutyCycle)) {
+        Logger::error(std::format(
+            "Motor {}: driver failed to execute drive command",
+            name()
+        ));
+
+        driver_->stop();
+
+        state_ = MotorState::Faulted;
+        health_ = DeviceHealth::ERROR;
+
+        Logger::error(std::format(
+            "Motor {}: state {} -> {}",
+            name(),
+            toString(oldState),
+            toString(state_)
+        ));
+
+        return false;
+    }
 
     if (driver_->dutyCycle() <= 0.0f) {
         state_ = MotorState::Stopped;
-        return;
+    } else {
+        state_ = direction == MotorDirection::FORWARD
+            ? MotorState::RunningForward
+            : MotorState::RunningBackward;
     }
 
-    state_ =
-        direction == MotorDirection::FORWARD ?
-        MotorState::RunningForward :
-        MotorState::RunningBackward;
-
     health_ = DeviceHealth::OK;
+
+    Logger::info(std::format(
+        "Motor {}: state {} -> {}",
+        name(),
+        toString(oldState),
+        toString(state_)
+    ));
+
+    return true;
 }
 
-void Motor::stop() {
+bool Motor::stop() {
     if (!initialized_) {
-        Logger::warning(std::format("Motor {} is not initialized - stop ignored", name()));
-        return;
+        Logger::warning(std::format(
+            "Motor {}: stop ignored because motor is not initialized",
+            name()
+        ));
+        return true;
     }
 
     Logger::info(std::format("Motor {}: stop requested", name()));
-    driver_->stop();
 
-    if (state_ == MotorState::Faulted) {
+    const auto oldState = state_;
+
+    if (!driver_->stop()) {
+        Logger::error(std::format(
+            "Motor {}: driver failed to stop motor safely",
+            name()
+        ));
+
+        state_ = MotorState::Faulted;
+        health_ = DeviceHealth::ERROR;
+
+        Logger::error(std::format(
+            "Motor {}: state {} -> {}",
+            name(),
+            toString(oldState),
+            toString(state_)
+        ));
+
+        return false;
+    }
+
+    if (state_ != MotorState::Faulted) {
         state_ = MotorState::Stopped;
         health_ = DeviceHealth::OK;
     }
+
+    Logger::info(std::format(
+        "Motor {}: state {} -> {}",
+        name(),
+        toString(oldState),
+        toString(state_)
+    ));
+
+    return true;
 }
 
 MotorDirection Motor::direction() const {
