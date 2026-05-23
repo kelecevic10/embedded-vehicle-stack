@@ -73,7 +73,7 @@ bool I2CManager::selectDevice(std::uint8_t address) {
 
     if (::ioctl(fd_, I2C_SLAVE, address) < 0) {
         Logger::error(std::format(
-            "I2CManager: failed to select device at address {}",
+            "I2CManager: failed to select device at address 0x{:20X}",
             address
         ));
         return false;
@@ -91,7 +91,7 @@ bool I2CManager::writeByte(std::uint8_t address, std::uint8_t value) {
     const std::uint8_t buffer[1] = { value };
     if (::write(fd_, buffer, 1) != 1) {
         Logger::error(std::format(
-            "I2CManager: failed to write byte to device at address {}",
+            "I2CManager: failed to write byte to device at address 0x{:20X}",
             address
         ));
         return false;
@@ -135,7 +135,7 @@ bool I2CManager::writeBytes(std::uint8_t address, const std::vector<std::uint8_t
     const auto bytesWritten = ::write(fd_, data.data(), data.size());
     if (bytesWritten != static_cast<ssize_t>(data.size())) {
         Logger::error(std::format(
-            "I2CManager: failed to write {} bytes to device at address {}",
+            "I2CManager: failed to write {} bytes to device at address 0x{:20X}",
             data.size(), address
         ));
         return false;
@@ -153,7 +153,7 @@ bool I2CManager::readByte(std::uint8_t address, std::uint8_t &value) {
 
     if (::read(fd_, &value, 1) != 1) {
         Logger::error(std::format(
-            "I2CManager: failed to read byte from device at address {}",
+            "I2CManager: failed to read byte from device at address 0x{:20X}",
             address
         ));
         return false;
@@ -181,7 +181,7 @@ bool I2CManager::readRegister8(std::uint8_t address, std::uint8_t reg, std::uint
     // then read one byte from that register
     if (::read(fd_, &value, 1) != 1) {
         Logger::error(std::format(
-            "I2CManager: failed to read byte from device at address {}",
+            "I2CManager: failed to read byte from device at address 0x{:20X}",
             address
         ));
         return false;
@@ -205,7 +205,7 @@ bool I2CManager::readBytes(std::uint8_t address, std::vector<std::uint8_t> &buff
     const auto bytesRead = ::read(fd_, buffer.data(), buffer.size());
     if (bytesRead != static_cast<ssize_t>(buffer.size())) {
         Logger::error(std::format(
-            "I2CManager: failed to read {} bytes from device at address {}",
+            "I2CManager: failed to read {} bytes from device at address 0x{:20X}",
             buffer.size(), address
         ));
         return false;
