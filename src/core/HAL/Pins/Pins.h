@@ -4,7 +4,7 @@
 
 #ifndef EMBEDDED_VEHICLE_STACK_PINS_H
 #define EMBEDDED_VEHICLE_STACK_PINS_H
-#include "core/HAL/GpioManager.h"
+#include "GpioManager.h"
 
 using GpioManager = hal::GpioManager;
 using OutputPinConfig = hal::OutputPinConfig;

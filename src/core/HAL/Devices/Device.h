@@ -7,7 +7,7 @@
 #include <string>
 
 #include "core/MessageBus/MessageBus.h"
-#include "core/HAL/GpioManager.h"
+#include "../Pins/GpioManager.h"
 #include "utils/logger/Logger.h"
 
 enum class DeviceHealth {

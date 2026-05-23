@@ -6,7 +6,7 @@
 #define EMBEDDED_VEHICLE_STACK_HAL_H
 #include <thread>
 
-#include "GpioManager.h"
+#include "Pins/GpioManager.h"
 #include "core/MessageBus/MessageBus.h"
 #include "core/System/Subsystem.h"
 #include "Devices/Device.h"
