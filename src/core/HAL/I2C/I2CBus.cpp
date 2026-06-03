@@ -2,7 +2,7 @@
 // Created by nemanja on 5/23/26.
 //
 
-#include "I2CManager.h"
+#include "I2CBus.h"
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
@@ -10,16 +10,16 @@
 #include <linux/i2c-dev.h>
 #include "utils/logger/Logger.h"
 
-I2CManager::I2CManager(std::string devicePath)
+I2CBus::I2CBus(std::string devicePath)
     : devicePath_(std::move(devicePath))
 {
 }
 
-I2CManager::~I2CManager() {
+I2CBus::~I2CBus() {
     closeBus();
 }
 
-bool I2CManager::openBus() {
+bool I2CBus::openBus() {
     std::scoped_lock lock(mutex_);
 
     if (fd_ >= 0) {
@@ -38,7 +38,7 @@ bool I2CManager::openBus() {
     return true;
 }
 
-bool I2CManager::closeBus() {
+bool I2CBus::closeBus() {
     std::scoped_lock lock(mutex_);
 
     if (fd_ < 0) {
@@ -56,16 +56,16 @@ bool I2CManager::closeBus() {
     return true;
 }
 
-bool I2CManager::isOpen() {
+bool I2CBus::isOpen() {
     std::scoped_lock lock(mutex_);
     return fd_ >= 0;
 }
 
-const std::string& I2CManager::devicePath() const {
+const std::string& I2CBus::devicePath() const {
     return devicePath_;
 }
 
-bool I2CManager::selectDevice(std::uint8_t address) {
+bool I2CBus::selectDevice(std::uint8_t address) {
     if (fd_ < 0) {
         Logger::error("I2CManager: cannot select device because bus is not open.");
         return false;
@@ -81,7 +81,7 @@ bool I2CManager::selectDevice(std::uint8_t address) {
     return true;
 }
 
-bool I2CManager::writeByte(std::uint8_t address, std::uint8_t value) {
+bool I2CBus::writeByte(std::uint8_t address, std::uint8_t value) {
     std::scoped_lock lock(mutex_);
 
     if (!selectDevice(address)) {
@@ -100,7 +100,7 @@ bool I2CManager::writeByte(std::uint8_t address, std::uint8_t value) {
     return true;
 }
 
-bool I2CManager::writeRegister8(std::uint8_t address, std::uint8_t reg, std::uint8_t value) {
+bool I2CBus::writeRegister8(std::uint8_t address, std::uint8_t reg, std::uint8_t value) {
     std::scoped_lock lock(mutex_);
 
     if (!selectDevice(address)) {
@@ -119,7 +119,7 @@ bool I2CManager::writeRegister8(std::uint8_t address, std::uint8_t reg, std::uin
     return true;
 }
 
-bool I2CManager::writeBytes(std::uint8_t address, const std::vector<std::uint8_t> &data) {
+bool I2CBus::writeBytes(std::uint8_t address, const std::vector<std::uint8_t> &data) {
 
     if (data.empty()) {
         Logger::warning("I2CManager: writeBytes called with empty data");
@@ -144,7 +144,7 @@ bool I2CManager::writeBytes(std::uint8_t address, const std::vector<std::uint8_t
     return true;
 }
 
-bool I2CManager::readByte(std::uint8_t address, std::uint8_t &value) {
+bool I2CBus::readByte(std::uint8_t address, std::uint8_t &value) {
     std::scoped_lock lock(mutex_);
 
     if (!selectDevice(address)) {
@@ -162,7 +162,7 @@ bool I2CManager::readByte(std::uint8_t address, std::uint8_t &value) {
     return true;
 }
 
-bool I2CManager::readRegister8(std::uint8_t address, std::uint8_t reg, std::uint8_t &value) {
+bool I2CBus::readRegister8(std::uint8_t address, std::uint8_t reg, std::uint8_t &value) {
     std::scoped_lock lock(mutex_);
 
     if (!selectDevice(address)) {
@@ -190,7 +190,7 @@ bool I2CManager::readRegister8(std::uint8_t address, std::uint8_t reg, std::uint
     return true;
 }
 
-bool I2CManager::readBytes(std::uint8_t address, std::vector<std::uint8_t> &buffer) {
+bool I2CBus::readBytes(std::uint8_t address, std::vector<std::uint8_t> &buffer) {
     if (buffer.empty()) {
         Logger::warning("I2CManager: readBytes called with empty buffer");
         return true;

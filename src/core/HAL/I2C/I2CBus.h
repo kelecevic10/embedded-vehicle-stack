@@ -10,15 +10,15 @@
 #include <vector>
 
 
-class I2CManager {
+class I2CBus {
 public:
-    explicit I2CManager(std::string devicePath);
-    ~I2CManager();
+    explicit I2CBus(std::string devicePath);
+    ~I2CBus();
 
-    I2CManager(const I2CManager&) = delete;
-    I2CManager& operator=(const I2CManager&) = delete;
-    I2CManager(I2CManager&&) = delete;
-    I2CManager& operator=(I2CManager&&) = delete;
+    I2CBus(const I2CBus&) = delete;
+    I2CBus& operator=(const I2CBus&) = delete;
+    I2CBus(I2CBus&&) = delete;
+    I2CBus& operator=(I2CBus&&) = delete;
 
     bool openBus();
     bool closeBus();
