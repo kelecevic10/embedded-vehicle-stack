@@ -4,12 +4,12 @@
 
 #ifndef EMBEDDED_VEHICLE_STACK_I2CDEVICE_H
 #define EMBEDDED_VEHICLE_STACK_I2CDEVICE_H
-#include "I2CManager.h"
+#include "I2CBus.h"
 
 
 class I2CDevice {
 public:
-    I2CDevice(I2CManager& manager, uint8_t address);
+    I2CDevice(I2CBus& manager, uint8_t address);
 
     bool writeRegister8(uint8_t reg, uint8_t value);
     bool readRegister8(uint8_t reg, uint8_t& value);
@@ -21,7 +21,7 @@ public:
 
     [[nodiscard]] uint8_t address() const;
 private:
-    I2CManager& i2cManager_;
+    I2CBus& i2cBus_;
     uint8_t address_;
 };
 
