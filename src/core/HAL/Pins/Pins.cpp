@@ -122,7 +122,6 @@ std::optional<PinState> DigitalInputPin::read() const {
     return std::nullopt;
 }
 
-
 bool DigitalInputPin::isHigh() const {
     const auto res = read();
     if (res.has_value())
@@ -153,3 +152,164 @@ bool DigitalInputPin::isInitialized() const {
     return initialized_;
 }
 
+PwmPin::PwmPin(PCADriver& pcaDriver, PwmPinConfig config)
+    : pcaDriver_(pcaDriver), config_(std::move(config))
+{
+}
+
+bool PwmPin::init() {
+    if (initialized_) {
+        Logger::warning(std::format(
+            "PwmPin {} already initialized",
+                config_.name
+        ));
+        return true;
+    }
+
+    if (!pcaDriver_.isInitialized()) {
+        Logger::error(std::format(
+            "Failed to initialize PwmPin {} BECAUSE PCA driver is not initialized",
+            config_.name
+        ));
+        return false;
+    }
+
+    const float clampedDutyCycle = std::clamp(config_.initialDutyCycle, 0.0f, 1.0f);
+    if (clampedDutyCycle == 0.0f) {
+        if (!pcaDriver_.forceLow(config_.channel)) {
+            Logger::error(std::format(
+                "Failed to force low on PwmPin {} BECAUSE PCA driver failed to force low",
+                config_.name
+            ));
+            return false;
+        }
+    } else {
+        if (!pcaDriver_.setDutyCycle(config_.channel, clampedDutyCycle)) {
+            Logger::error(std::format(
+                "Failed to set duty cycle on PwmPin {} BECAUSE PCA driver failed to set duty cycle",
+                config_.name
+            ));
+            return false;
+        }
+    }
+
+    dutyCycle_ = clampedDutyCycle;
+    initialized_ = true;
+
+    Logger::info(std::format(
+    "PwmPin {}: initialized on PCA channel {} with dutyCycle {:.2f}",
+    config_.name,
+    config_.channel,
+    dutyCycle_
+    ));
+
+    return true;
+}
+
+bool PwmPin::shutdown() {
+    if (!initialized_) {
+        return true;
+    }
+
+    const bool ok = pcaDriver_.forceLow(config_.channel);
+
+    dutyCycle_ = 0.0f;
+    initialized_ = false;
+
+    if (!ok) {
+        Logger::error(std::format(
+            "Failed to shutdown PwmPin {} BECAUSE PCA driver failed to force low",
+            config_.name
+        ));
+        return false;
+    }
+
+    Logger::info(std::format(
+        "PwmPin {}: shutdown on PCA channel {}",
+        config_.name, config_.channel
+     ));
+
+    return true;
+}
+
+bool PwmPin::setDutyCycle(float dutyCycle) {
+    if (!initialized_) {
+        Logger::warning(std::format(
+            "PwmPin {}: setDutyCycle called before initialization",
+            config_.name
+        ));
+        return false;
+    }
+
+    const float clampedDutyCycle = std::clamp(dutyCycle, 0.0f, 1.0f);
+
+    if (!pcaDriver_.setDutyCycle(config_.channel, clampedDutyCycle)) {
+        Logger::error(std::format(
+            "PwmPin {}: failed to set dutyCycle {:.2f}",
+            config_.name,
+            clampedDutyCycle
+        ));
+        return false;
+    }
+
+    dutyCycle_ = clampedDutyCycle;
+    return true;
+}
+
+bool PwmPin::forceLow() {
+    if (!initialized_) {
+        Logger::warning(std::format(
+            "PwmPin {}: forceLow called before initialization",
+            config_.name
+        ));
+        return false;
+    }
+
+    if (!pcaDriver_.forceLow(config_.channel)) {
+        Logger::error(std::format(
+            "PwmPin {}: failed to force LOW",
+            config_.name
+        ));
+        return false;
+    }
+
+    dutyCycle_ = 0.0f;
+    return true;
+}
+
+bool PwmPin::forceHigh() {
+    if (!initialized_) {
+        Logger::warning(std::format(
+            "PwmPin {}: forceHigh called before initialization",
+            config_.name
+        ));
+        return false;
+    }
+
+    if (!pcaDriver_.forceHigh(config_.channel)) {
+        Logger::error(std::format(
+            "PwmPin {}: failed to force HIGH",
+            config_.name
+        ));
+        return false;
+    }
+
+    dutyCycle_ = 1.0f;
+    return true;
+}
+
+bool PwmPin::isInitialized() const {
+    return initialized_;
+}
+
+float PwmPin::dutyCycle() const {
+    return dutyCycle_;
+}
+
+std::uint8_t PwmPin::channel() const {
+    return config_.channel;
+}
+
+const std::string& PwmPin::name() const {
+    return config_.name;
+}
