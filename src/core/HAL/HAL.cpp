@@ -11,6 +11,12 @@
 bool HAL::registerDevices() {
     using namespace hal;
 
+    i2cBus_ = std::make_unique<I2CBus>("/dev/i2c-1");
+    if (!i2cBus_->openBus()) {
+        Logger::error("HAL: Could not open I2C bus!");
+        return false;
+    }
+
     OutputPinConfig config_led_ok {
         .pin = 4,
         .consumer = "LED_OK",
@@ -56,6 +62,19 @@ bool HAL::registerDevices() {
 
     if (!yellowLed_) return false;
 
+    I2CDevice pcaDevice(*i2cBus_, 0x40);
+    pcaDriver_ = std::make_unique<PCADriver>(std::move(pcaDevice));
+
+    if (!pcaDriver_->init()) {
+        Logger::error("HAL: Could not initialize PCA driver!");
+        return false;
+    }
+
+    if (!pcaDriver_->setPwmFrequency(100.0f)) {
+        Logger::error("HAL: Could not set PCA PWM frequency!");
+        return false;
+    }
+
     OutputPinConfig rEnableConf {
         .pin = 17,
         .consumer = "MOTOR_R_EN",
@@ -70,18 +89,16 @@ bool HAL::registerDevices() {
         .initialValue = PinState::LOW
     };
 
-    OutputPinConfig rPwmConf {
-        .pin = 22,
-        .consumer = "MOTOR_R_PWM",
-        .activeLow = false,
-        .initialValue = PinState::LOW
+    PwmPinConfig rPwmConf {
+        .name = "LEFT_RPWM",
+        .channel = 0,
+        .initialDutyCycle = 0.0f
     };
 
-    OutputPinConfig lPwmConf {
-        .pin = 23,
-        .consumer = "MOTOR_L_PWM",
-        .activeLow = false,
-        .initialValue = PinState::LOW
+    PwmPinConfig lPwmConf {
+        .name = "LEFT_LPWM",
+        .channel = 1,
+        .initialDutyCycle = 0.0f
     };
 
     auto leftMotorConf = MotorConfig {
@@ -94,6 +111,7 @@ bool HAL::registerDevices() {
     leftMotor_ = createDevice<Motor>(
         MotorId::LEFT,
         "L_MOTOR",
+        *pcaDriver_,
         *gpioManager_,
         std::move(leftMotorConf)
     );
@@ -136,8 +154,6 @@ HAL::HAL(MessageBus* msg, std::string chip_path)
         throw;
     };
 }
-
-
 
 bool HAL::start() {
     if (thread_.joinable()) {
@@ -193,6 +209,20 @@ bool HAL::stop() {
     if (!shutdownDevices()) {
         Logger::error("HAL: Could not shutdown devices!");
         return false;
+    }
+
+    if (pcaDriver_) {
+        if (!pcaDriver_->shutdown()) {
+            Logger::error("HAL: Could not shutdown PCA driver!");
+            return false;
+        }
+    }
+
+    if (i2cBus_) {
+        if (!i2cBus_->closeBus()) {
+            Logger::error("HAL: Could not close I2C bus!");
+            return false;
+        }
     }
 
     if (activeDiagLed_) {

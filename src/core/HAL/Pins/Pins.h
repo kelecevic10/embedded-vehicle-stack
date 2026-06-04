@@ -97,6 +97,6 @@ private:
     PwmPinConfig config_;
     bool initialized_ {false};
     float dutyCycle_ {0.0f};
-}
+};
 
 #endif //EMBEDDED_VEHICLE_STACK_PINS_H

@@ -12,10 +12,11 @@ class MotorDriver {
 public:
     MotorDriver(
         GpioManager& gpioManager,
+        PCADriver& pcaDriver,
         OutputPinConfig rEnableConf,
         OutputPinConfig lEnableConf,
-        OutputPinConfig rPwmConf,
-        OutputPinConfig lPwmConf
+        PwmPinConfig rPwmConf,
+        PwmPinConfig lPwmConf
     );
 
     ~MotorDriver();
@@ -37,13 +38,13 @@ public:
 
 private:
     bool setPinsLow();
-    bool applyDigitalDrive();
+    bool applyDrive();
 
 private:
     DigitalOutputPin rEnablePin_;
     DigitalOutputPin lEnablePin_;
-    DigitalOutputPin rPwmPin_;
-    DigitalOutputPin lPwmPin_;
+    PwmPin rPwmPin_;
+    PwmPin lPwmPin_;
 
     MotorDirection direction_ {MotorDirection::FORWARD};
     float dutyCycle_ {0.0f};

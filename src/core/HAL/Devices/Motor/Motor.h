@@ -11,7 +11,13 @@
 
 class Motor : public Device {
 public:
-    explicit Motor(MotorId id, std::string name, GpioManager& gpioManager, MotorConfig config);
+    explicit Motor(
+        MotorId id,
+        std::string name,
+        PCADriver& pcaDriver,
+        GpioManager& gpioManager,
+        MotorConfig config
+    );
     ~Motor() override;
 
     bool init() override;

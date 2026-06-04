@@ -11,15 +11,16 @@
 
 MotorDriver::MotorDriver(
     GpioManager& gpioManager,
+    PCADriver& pcaDriver,
     OutputPinConfig rEnableConf,
     OutputPinConfig lEnableConf,
-    OutputPinConfig rPwmConf,
-    OutputPinConfig lPwmConf
+    PwmPinConfig rPwmConf,
+    PwmPinConfig lPwmConf
 ) :
     rEnablePin_(gpioManager, std::move(rEnableConf)),
     lEnablePin_(gpioManager, std::move(lEnableConf)),
-    rPwmPin_(gpioManager, std::move(rPwmConf)),
-    lPwmPin_(gpioManager, std::move(lPwmConf))
+    rPwmPin_(pcaDriver, std::move(rPwmConf)),
+    lPwmPin_(pcaDriver, std::move(lPwmConf))
 { }
 
 MotorDriver::~MotorDriver() {
@@ -73,7 +74,7 @@ bool MotorDriver::shutdown() {
     // Important: shutdown must also work after partial init failure.
     // Therefore, it must not simply return when initialized_ == false.
 
-   bool safeLow = setPinsLow();
+    bool safeLow = setPinsLow();
 
     bool validPinShutDown = true;
 
@@ -137,8 +138,8 @@ bool MotorDriver::drive() {
         return stop();
     }
 
-    if (!applyDigitalDrive()) {
-        Logger::error("MotorDriver: could not apply digital drive command");
+    if (!applyDrive()) {
+        Logger::error("MotorDriver: could not apply drive command");
 
         if (!stop()) {
             Logger::error("MotorDriver: failed to restore safe state after drive failure.");
@@ -182,11 +183,11 @@ bool MotorDriver::setPinsLow() {
 
     // Safer order: first remove drive/PWM signals, then disable the driver.
     if (rPwmPin_.isInitialized()) {
-        valid &= rPwmPin_.setLow();
+        valid &= rPwmPin_.forceLow();
     }
 
     if (lPwmPin_.isInitialized()) {
-        valid &= lPwmPin_.setLow();
+        valid &= lPwmPin_.forceLow();
     }
 
     if (rEnablePin_.isInitialized()) {
@@ -200,13 +201,10 @@ bool MotorDriver::setPinsLow() {
     return valid;
 }
 
-bool MotorDriver::applyDigitalDrive() {
-    // Temporary digital implementation:
-    // any dutyCycle_ > 0 means full-power drive.
-    // Real PWM will later replace this behavior.
+bool MotorDriver::applyDrive() {
 
     // Safe transition: first remove both direction/PWM signals.
-    if (!rPwmPin_.setLow() || !lPwmPin_.setLow()) {
+    if (!rPwmPin_.forceLow() || !lPwmPin_.forceLow()) {
         Logger::error("MotorDriver: could not clear PWM pins before direction change");
         return false;
     }
@@ -217,8 +215,8 @@ bool MotorDriver::applyDigitalDrive() {
     }
 
     if (direction_ == MotorDirection::FORWARD) {
-        return rPwmPin_.setHigh() && lPwmPin_.setLow();
+        return rPwmPin_.setDutyCycle(dutyCycle_) && lPwmPin_.forceLow();
     }
 
-    return rPwmPin_.setLow() && lPwmPin_.setHigh();
+    return rPwmPin_.forceLow() && lPwmPin_.setDutyCycle(dutyCycle_);
 }

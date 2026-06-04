@@ -156,14 +156,11 @@ bool PCADriver::shutdown() {
     }
 
     Logger::info("PCA9685 shutdown successfully");
+    initialized_ = false;
     return true;
 }
 
 bool PCADriver::setPwmFrequency(float frequency) {
-    if (!initialized_) {
-        Logger::error("PCA9685: setPwmFrequency called before init");
-        return false;
-    }
 
     if (frequency <= 0.0f) {
         Logger::error("PCA9685: invalid PWM frequency");

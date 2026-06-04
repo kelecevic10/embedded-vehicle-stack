@@ -4,12 +4,19 @@
 
 #include "Motor.h"
 
-Motor::Motor(const MotorId id, std::string name, GpioManager &gpioManager, MotorConfig config)
+Motor::Motor(
+    const MotorId id,
+    std::string name,
+    PCADriver& pcaDriver,
+    GpioManager& gpioManager,
+    MotorConfig config
+    )
     : Device(std::move(name)), id_(id)
 {
 
     driver_ = std::make_unique<MotorDriver>(
         gpioManager,
+        pcaDriver,
         std::move(config.rEnable),
         std::move(config.lEnable),
         std::move(config.rPwm),

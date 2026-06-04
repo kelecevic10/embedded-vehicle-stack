@@ -45,12 +45,15 @@ public:
 private:
     std::jthread thread_;
     std::atomic<bool> running_;
-    std::unique_ptr<GpioManager> gpioManager_;
     std::vector<std::unique_ptr<Device>> devices_;
 
     bool registerDevices();
     bool initDevices();
     bool shutdownDevices();
+
+    std::unique_ptr<GpioManager> gpioManager_;
+    std::unique_ptr<I2CBus> i2cBus_;
+    std::unique_ptr<PCADriver> pcaDriver_;
 
     LED* greenLed_ = nullptr;
     LED* redLed_ = nullptr;
