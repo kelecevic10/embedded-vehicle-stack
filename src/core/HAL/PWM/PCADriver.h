@@ -32,7 +32,7 @@ private:
 private:
     I2CDevice device_;
     bool initialized_ {false};
-    float frequency_ {100.0f};   // Hz
+    float frequency_ {50.0f};   // Hz
 };
 
 

@@ -70,7 +70,7 @@ bool HAL::registerDevices() {
         return false;
     }
 
-    if (!pcaDriver_->setPwmFrequency(100.0f)) {
+    if (!pcaDriver_->setPwmFrequency(500.0f)) {
         Logger::error("HAL: Could not set PCA PWM frequency!");
         return false;
     }
