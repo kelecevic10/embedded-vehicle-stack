@@ -7,6 +7,9 @@
 #include <memory>
 #include <string>
 #include <variant>
+#include <atomic>
+#include <cstdint>
+#include <string_view>
 
 #include "../../utils/enums/DiagTypes.h"
 #include "core/HAL/Devices/Motor/MotorDriver.h"
@@ -37,12 +40,28 @@ inline std::string EventTypeToString(const EventType t) {
     switch (t) {
         case EventType::SYSTEM_SHUTDOWN:
             return "SYSTEM_SHUTDOWN";
+        case EventType::SUBSYSTEM_STATE_CHANGED:
+            return "SUBSYSTEM_STATE_CHANGED";
         case EventType::DIAGNOSTICS_UPDATE:
             return "DIAGNOSTICS_UPDATE";
         case EventType::DIAGNOSTICS_WARNING:
             return "DIAGNOSTICS_WARNING";
         case EventType::DIAGNOSTICS_ALERT:
             return "DIAGNOSTICS_ALERT";
+        case EventType::CAMERA_TAKE_SNAPSHOT:
+            return "CAMERA_TAKE_SNAPSHOT";
+        case EventType::CAMERA_START_RECORDING:
+            return "CAMERA_START_RECORDING";
+        case EventType::CAMERA_STOP_RECORDING:
+            return "CAMERA_STOP_RECORDING";
+        case EventType::CAMERA_START_PREVIEW:
+            return "CAMERA_START_PREVIEW";
+        case EventType::CAMERA_STOP_PREVIEW:
+            return "CAMERA_STOP_PREVIEW";
+        case EventType::MOTOR_DRIVE:
+            return "MOTOR_DRIVE";
+        case EventType::MOTOR_STOP:
+            return "MOTOR_STOP";
         default:
             return "UNKNOWN";
     }
@@ -70,10 +89,12 @@ using EventPayload = std::variant<
 >;
 
 struct Event {
+    std::uint64_t id;
     EventType type;
     EventPayload payload;
     int priority;
-    std::string timestamp;
+    std::uint64_t createdAtMs;
+    std::string source;
 
     // we move payload because it can contain very large data -> this is much more effective
     // priority politics:
@@ -81,11 +102,23 @@ struct Event {
     // [5-9] system: Module startup/shutdown signals, diagnostic alerts
     // [10] normal: Default priority, standard telemetry, routine diagnostics, user commands ...
     // [11-20] background: logging to file, heartbeat signals, UI updates ...; These are processed only when the bus is idle.
-    explicit Event(EventType t, EventPayload p = std::monostate{}, const int priority = 10)
-        : type(t), priority(priority), payload(std::move(p))
+    explicit Event(
+        EventType type,
+        EventPayload payload = std::monostate {},
+        int priority = 10,
+        std::string source = "UNKNOWN"
+    )
+        : id(nextId_.fetch_add(1, std::memory_order_relaxed)),
+          type(type),
+          payload(std::move(payload)),
+          priority(priority),
+          createdAtMs(TimeUtils::get_time_in_ms()),
+          source(std::move(source))
     {
-        timestamp = TimeUtils::time_stamp();
     }
+
+private:
+    inline static std::atomic<std::uint64_t> nextId_ {1};
 };
 
 // Use const Event because one published event is shared across

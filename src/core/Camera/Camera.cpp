@@ -342,6 +342,8 @@ void Camera::updateState(const CameraState &to) {
         Event stateChanged {
             EventType::SUBSYSTEM_STATE_CHANGED,
             std::format("{}: {} -> {}", name(), toString(currentState_), toString(to)),
+            10,
+            "Camera"
         };
         publish(std::move(stateChanged));
         currentState_ = to;

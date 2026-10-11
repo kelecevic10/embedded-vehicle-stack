@@ -186,7 +186,8 @@ void Diagnostics::buildSnapShot() {
     Event diagUpdate(
         EventType::DIAGNOSTICS_UPDATE,
         snapShot_,
-        10
+        10,
+        "Diagnostics"
         );
 
     publish(std::move(diagUpdate));
@@ -199,6 +200,11 @@ SnapShot Diagnostics::getSnapShot() {
 }
 
 void Diagnostics::emitMonitorUpdate(const EventType t, std::string_view monitor_name, double usage, int priority) const {
-    const Event event(t, std::format("{}: usage {}%", monitor_name, usage), priority);
+    const Event event(
+        t,
+        std::format("{}: usage {}%", monitor_name, usage),
+        priority,
+        "Diagnostics"
+        );
     publish(std::move(event));
 }
