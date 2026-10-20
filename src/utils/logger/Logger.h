@@ -57,7 +57,7 @@ public:
         bus_->subscribe(EventType::DIAGNOSTICS_WARNING, this);
         bus_->subscribe(EventType::DIAGNOSTICS_ALERT, this);
         bus_->subscribe(EventType::SUBSYSTEM_STATE_CHANGED, this);
-        // bus_->subscribe(EventType::SYSTEM_SHUTDOWN, this);
+        bus_->subscribe(EventType::SYSTEM_SHUTDOWN, this);
     };
 
     ~Logger() override
@@ -65,7 +65,7 @@ public:
         bus_->unsubscribe(EventType::DIAGNOSTICS_UPDATE, this);
         bus_->unsubscribe(EventType::DIAGNOSTICS_WARNING, this);
         bus_->unsubscribe(EventType::DIAGNOSTICS_ALERT, this);
-        // bus_->unsubscribe(EventType::SYSTEM_SHUTDOWN, this);
+        bus_->unsubscribe(EventType::SYSTEM_SHUTDOWN, this);
         bus_->unsubscribe(EventType::SUBSYSTEM_STATE_CHANGED, this);
         // the base class EventProcessor destructor calls stopEventLoop()
         stopEventLoop();

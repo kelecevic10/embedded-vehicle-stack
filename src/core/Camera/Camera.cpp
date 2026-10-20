@@ -273,12 +273,13 @@ bool Camera::stop() {
         requestedState_ = CameraState::ShuttingDown;
     }
 
-    stopEventLoop();
     bus_->unsubscribe(EventType::CAMERA_TAKE_SNAPSHOT, this);
     bus_->unsubscribe(EventType::CAMERA_START_RECORDING, this);
     bus_->unsubscribe(EventType::CAMERA_STOP_RECORDING, this);
     bus_->unsubscribe(EventType::CAMERA_START_PREVIEW, this);
     bus_->unsubscribe(EventType::CAMERA_STOP_PREVIEW, this);
+
+    stopEventLoop();
 
     running_.store(false);
     workerCv_.notify_one();
