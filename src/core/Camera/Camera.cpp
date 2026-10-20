@@ -246,11 +246,19 @@ bool Camera::start() {
         requestedState_ = CameraState::Idle;
     }
 
+    if (!startEventLoop()) {
+        backend_.shutdown();
+
+        std::lock_guard lock(cameraMutex_);
+        currentState_ = CameraState::Uninitialized;
+        requestedState_ = CameraState::Uninitialized;
+
+        return false;
+    }
+
     // start the worker thread
     running_.store(true);
     workerThread_ = std::jthread(&Camera::workerLoop, this);
-
-    startEventLoop();
 
     bus_->subscribe(EventType::CAMERA_TAKE_SNAPSHOT, this);
     bus_->subscribe(EventType::CAMERA_START_RECORDING, this);

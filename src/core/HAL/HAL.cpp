@@ -176,11 +176,19 @@ bool HAL::start() {
     if (handlers_.empty())
         registerHandlers();
 
+    if (!startEventLoop()) {
+        shutdownDevices();
+
+        if (pcaDriver_) pcaDriver_->shutdown();
+        if (i2cBus_) i2cBus_->closeBus();
+        activeDiagLed_ = nullptr;
+
+        return false;
+    }
+
     bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
     bus_->subscribe(EventType::MOTOR_DRIVE, this);
     bus_->subscribe(EventType::MOTOR_STOP, this);
-
-    startEventLoop();
 
     running_.store(true);
     thread_ = std::jthread(&HAL::loop, this);

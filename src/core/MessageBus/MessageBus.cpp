@@ -7,6 +7,7 @@
 #include <thread>
 #include "utils/logger/Logger.h"
 #include "core/Event/EventProcessor.h"
+#include "core/Event/EventTrace.h"
 
 MessageBus::MessageBus() : isRunning(false)
 {
@@ -132,16 +133,18 @@ void MessageBus::publish(const EventPtr& event)
         return;
     }
 
-    Logger::info(std::format(
-        "[EVENT_TRACE] stage=PUBLISHED "
-        "event_id={} event_type={} source={} "
-        "priority={} created_at_ms={}",
-        event->id,
-        EventTypeToString(event->type),
-        event->source,
-        event->priority,
-        event->createdAtMs
-    ));
+    if (EventTrace::isEnabled()) {
+        Logger::info(std::format(
+            "[EVENT_TRACE] stage=PUBLISHED "
+            "event_id={} event_type={} source={} "
+            "priority={} created_at_ms={}",
+            event->id,
+            EventTypeToString(event->type),
+            event->source,
+            event->priority,
+            event->createdAtMs
+        ));
+    }
 
     cv_.notify_one();
 }

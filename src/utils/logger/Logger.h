@@ -51,7 +51,8 @@ public:
 
         Logger::registerHandlers();
 
-        startEventLoop();
+        if (!startEventLoop())
+            return;
 
         bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
         bus_->subscribe(EventType::DIAGNOSTICS_WARNING, this);

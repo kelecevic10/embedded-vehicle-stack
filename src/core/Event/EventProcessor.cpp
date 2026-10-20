@@ -3,7 +3,7 @@
 //
 
 #include "EventProcessor.h"
-
+#include "core/Event/EventTrace.h"
 #include <format>
 
 #include "core/MessageBus/MessageBus.h"
@@ -25,14 +25,36 @@ void EventProcessor::subscribe(const EventType event_type, std::function<void(co
     handlers_[event_type].push_back(std::move(handler));
 }
 
-void EventProcessor::startEventLoop() {
-    terminate_.store(false);
-    thread_ = std::jthread(&EventProcessor::loop, this);
+bool EventProcessor::startEventLoop() {
+    {
+        std::lock_guard lock(mutex_);
+        terminate_.store(false);
+        acceptingEvents_ = true;
+    }
+
+    try {
+        thread_ = std::jthread(&EventProcessor::loop, this);
+    }
+    catch (...) {
+        std::lock_guard lock(mutex_);
+        acceptingEvents_ = false;
+        terminate_.store(true);
+        Logger::error(std::format("{} EventProcessor::startEventLoop() failed", processorName()));
+        return false;
+    }
+
+    return true;
 }
 
 void EventProcessor::stopEventLoop() {
-    terminate_.store(true);
+    {
+        std::lock_guard lock(mutex_);
+        acceptingEvents_ = false;
+        terminate_.store(true);
+    }
+
     cv_.notify_one();
+
     if (thread_.joinable()) {
         thread_.join();
     }
@@ -52,21 +74,28 @@ void EventProcessor::emitEvent(const EventPtr& event) {
     std::size_t queueSize;
     {
         std::lock_guard lock(mutex_);
+
+        if (!acceptingEvents_) {
+            return;
+        }
+
         queue_.push(event);
         queueSize = queue_.size();
     }
 
-    Logger::info(std::format(
-    "[EVENT_TRACE] stage=RECEIVED "
-        "event_id={} event_type={} source={} "
-        "receiver={} priority={} queue_size={}",
-        event->id,
-        EventTypeToString(event->type),
-        event->source,
-        receiver,
-        event->priority,
-        queueSize
-    ));
+    if (EventTrace::isEnabled()) {
+        Logger::info(std::format(
+        "[EVENT_TRACE] stage=RECEIVED "
+            "event_id={} event_type={} source={} "
+            "receiver={} priority={} queue_size={}",
+            event->id,
+            EventTypeToString(event->type),
+            event->source,
+            receiver,
+            event->priority,
+            queueSize
+        ));
+    }
 
     cv_.notify_one();
 }
@@ -133,7 +162,7 @@ void EventProcessor::loop() {
                 }
             }
 
-            if (allHandlersSucceeded) {
+            if (allHandlersSucceeded && EventTrace::isEnabled()) {
                 Logger::info(std::format(
                     "[EVENT_TRACE] stage=HANDLED "
                     "event_id={} event_type={} source={} "

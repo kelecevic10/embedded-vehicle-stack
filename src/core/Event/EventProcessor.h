@@ -76,12 +76,13 @@ public:
 protected:
     void loop();
     void subscribe(EventType event_type, std::function<void(const Event &)> handler);
-    void startEventLoop();
+    bool startEventLoop();
     void stopEventLoop();
 
     MessageBus* bus_;
     std::jthread thread_;
     std::atomic<bool> terminate_ {false};
+    bool acceptingEvents_ {false};
     EventQueue queue_;
     std::mutex mutex_;
     std::condition_variable cv_;

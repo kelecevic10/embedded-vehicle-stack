@@ -36,6 +36,9 @@ bool Diagnostics::start() {
         initMonitors();
     }
 
+    if (!startEventLoop())
+        return false;
+
     // if the thread already exists - avoid the double start
     // this serves different purposes than atomic running - it manages the code logic
     // whether the whole system should be turned on/off
@@ -49,7 +52,6 @@ bool Diagnostics::start() {
     try {
         running = true;
         diagThread = std::jthread(&Diagnostics::diagnosisLoop, this);
-        this->startEventLoop();
         // HERE goes the list of specific event types
         // eg. this->subscribe(Event_type::some_event, this)
         // this->subscribe(Event_type::some_event_2, this)
@@ -57,10 +59,14 @@ bool Diagnostics::start() {
     } catch (const std::system_error &e) {
         Logger::error(std::format("Failed to create diagnostics thread: {}", e.what()));
         running = false;
+
+        stopEventLoop();
+
         monitors_.clear();
         cpu_monitor_ = nullptr;
         ram_monitor_ = nullptr;
         disk_monitor_ = nullptr;
+
         return false;
     }
     return true;
