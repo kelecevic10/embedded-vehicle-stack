@@ -8,6 +8,7 @@
 #include "Sink.h"
 #include "core/Event/EventProcessor.h"
 #include "core/MessageBus/MessageBus.h"
+#include <mutex>
 
 
 enum class LogType : uint8_t {
@@ -65,9 +66,9 @@ public:
         bus_->unsubscribe(EventType::DIAGNOSTICS_WARNING, this);
         bus_->unsubscribe(EventType::DIAGNOSTICS_ALERT, this);
         // bus_->unsubscribe(EventType::SYSTEM_SHUTDOWN, this);
-
+        bus_->unsubscribe(EventType::SUBSYSTEM_STATE_CHANGED, this);
         // the base class EventProcessor destructor calls stopEventLoop()
-        // stopEventLoop();
+        stopEventLoop();
     };
 
     void registerHandlers() override {
@@ -112,6 +113,7 @@ public:
 private:
     static std::string formatLog(LogType, std::string_view);
     static std::vector<std::unique_ptr<Sink>> sinks;
+    static std::mutex sinksMutex;
 
     static inline std::string defaultLogFolder = "../logs/";
 };

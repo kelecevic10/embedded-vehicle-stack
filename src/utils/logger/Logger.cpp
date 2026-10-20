@@ -13,6 +13,7 @@
 
 // define the static vector
 std::vector<std::unique_ptr<Sink>> Logger::sinks = {};
+std::mutex Logger::sinksMutex;
 
 std::string Logger::formatLog(LogType type, std::string_view message) {
 
@@ -33,10 +34,13 @@ std::string Logger::formatLog(LogType type, std::string_view message) {
 // the creation (allocation) of a sink is made directly when calling this func
 // via addSink(std::make_unique<FileSink>()) <- example
 void Logger::addSink(std::unique_ptr<Sink> sink) {
+    std::lock_guard lock(sinksMutex);
     sinks.push_back(std::move(sink));
 }
 
 void Logger::removeSink(const Sink* toRemove) {
+    std::lock_guard lock(sinksMutex);
+
     sinks.erase(
         std::remove_if(
             sinks.begin(),
@@ -61,6 +65,9 @@ const std::string & Logger::getDefaultLogFolder() {
 void Logger::info(std::string_view message)
 {
     auto formatted_message = formatLog(LogType::INFO, message);
+
+    std::lock_guard lock(sinksMutex);
+
     for (auto& sink: sinks) {
         sink->writeLog(formatted_message);
     }
@@ -69,6 +76,9 @@ void Logger::info(std::string_view message)
 void Logger::warning(std::string_view message)
 {
     auto formatted_message = formatLog(LogType::WARNING, message);
+
+    std::lock_guard lock(sinksMutex);
+
     for (auto& sink: sinks) {
         sink->writeLog(formatted_message);
     }
@@ -77,6 +87,9 @@ void Logger::warning(std::string_view message)
 void Logger::error(std::string_view message)
 {
     auto formatted_message = formatLog(LogType::ERROR, message);
+
+    std::lock_guard lock(sinksMutex);
+
     for (auto& sink: sinks) {
         sink->writeLog(formatted_message);
     }
