@@ -10,7 +10,7 @@
 #include <map>
 #include <queue>
 #include <thread>
-
+#include <string_view>
 #include "Event.h"
 
 // EventProcessor usage model:
@@ -86,6 +86,9 @@ protected:
     std::mutex mutex_;
     std::condition_variable cv_;
     std::map<EventType, std::vector<std::function<void(const Event&)>>> handlers_;
+
+private:
+    [[ nodiscard ]] std::string_view processorName() const;
 };
 
 

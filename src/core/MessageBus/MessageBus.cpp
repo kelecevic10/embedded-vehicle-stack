@@ -102,13 +102,46 @@ void MessageBus::unsubscribe(EventType event, EventProcessor *subscriber) {
 
 void MessageBus::publish(const EventPtr& event)
 {
-    std::lock_guard lock(mutex_);
-
-    if (!isRunning.load()) {
-        Logger::warning("MessageBus is not running - cannot publish an Event!");
+    if (!event) {
+        Logger::error(
+            "[EVENT_TRACE] Cannot publish a null event"
+        );
         return;
     }
 
-    messages_.push(event);
+    bool accepted = false;
+
+    {
+        std::lock_guard lock(mutex_);
+
+        if (isRunning.load()) {
+            messages_.push(event);
+            accepted = true;
+        }
+    }
+
+    if (!accepted) {
+        Logger::warning(std::format(
+            "[EVENT_TRACE] Event rejected because MessageBus is not running: "
+            "event_id={} event_type={} source={}",
+            event->id,
+            EventTypeToString(event->type),
+            event->source
+        ));
+
+        return;
+    }
+
+    Logger::info(std::format(
+        "[EVENT_TRACE] stage=PUBLISHED "
+        "event_id={} event_type={} source={} "
+        "priority={} created_at_ms={}",
+        event->id,
+        EventTypeToString(event->type),
+        event->source,
+        event->priority,
+        event->createdAtMs
+    ));
+
     cv_.notify_one();
 }

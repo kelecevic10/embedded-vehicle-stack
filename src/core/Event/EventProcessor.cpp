@@ -8,6 +8,8 @@
 
 #include "core/MessageBus/MessageBus.h"
 #include "utils/logger/Logger.h"
+#include "core/System/Subsystem.h"
+#include <exception>
 
 EventProcessor::EventProcessor(MessageBus* bus)
     : bus_(bus)
@@ -37,37 +39,130 @@ void EventProcessor::stopEventLoop() {
 }
 
 void EventProcessor::emitEvent(const EventPtr& event) {
-    std::lock_guard lock(mutex_);
-    queue_.push(event);
+    const auto receiver = processorName();
+
+    if (!event) {
+        Logger::error(std::format(
+            "[EVENT_TRACE] {} received a null event",
+            receiver
+        ));
+        return;
+    }
+
+    std::size_t queueSize;
+    {
+        std::lock_guard lock(mutex_);
+        queue_.push(event);
+        queueSize = queue_.size();
+    }
+
+    Logger::info(std::format(
+    "[EVENT_TRACE] stage=RECEIVED "
+        "event_id={} event_type={} source={} "
+        "receiver={} priority={} queue_size={}",
+        event->id,
+        EventTypeToString(event->type),
+        event->source,
+        receiver,
+        event->priority,
+        queueSize
+    ));
+
     cv_.notify_one();
 }
 
 void EventProcessor::loop() {
-    while (!terminate_.load()) {
+    while (true) {
         std::unique_lock lock(mutex_);
-        cv_.wait(lock, [this](){return !queue_.empty() || terminate_.load();});
-        if (terminate_.load() && queue_.empty())
+
+        cv_.wait(lock, [this]() {
+            return !queue_.empty() || terminate_.load();
+        });
+
+        if (terminate_.load() && queue_.empty()) {
             break;
+        }
 
         while (!queue_.empty()) {
             const auto event = queue_.top();
             queue_.pop();
-            if (handlers_.contains(event->type)) {
-                const auto& handlers = handlers_[event->type];
+
+            const auto handlersIt = handlers_.find(event->type);
+
+            if (handlersIt == handlers_.end()) {
                 lock.unlock();
-                for (auto& handler : handlers) {
-                    handler(*event);
-                }
+
+                Logger::error(std::format(
+                    "[EVENT_TRACE] stage=FAILED "
+                    "event_id={} event_type={} source={} "
+                    "receiver={} reason=no_handler",
+                    event->id,
+                    EventTypeToString(event->type),
+                    event->source,
+                    processorName()
+                ));
+
                 lock.lock();
-            } else {
-                Logger::error(std::format("No handler for event type: {}", EventTypeToString(event->type)));
+                continue;
             }
+
+            const auto& handlers = handlersIt->second;
+
+            lock.unlock();
+
+            bool allHandlersSucceeded = true;
+
+            for (std::size_t index = 0; index < handlers.size(); ++index) {
+                try {
+                    handlers[index](*event);
+                }
+                catch (const std::exception& exception) {
+                    allHandlersSucceeded = false;
+
+                    Logger::error(std::format(
+                        "[EVENT_TRACE] stage=FAILED "
+                        "event_id={} event_type={} source={} "
+                        "receiver={} handler_index={} reason=\"{}\"",
+                        event->id,
+                        EventTypeToString(event->type),
+                        event->source,
+                        processorName(),
+                        index + 1,
+                        exception.what()
+                    ));
+                }
+            }
+
+            if (allHandlersSucceeded) {
+                Logger::info(std::format(
+                    "[EVENT_TRACE] stage=HANDLED "
+                    "event_id={} event_type={} source={} "
+                    "receiver={} handler_count={}",
+                    event->id,
+                    EventTypeToString(event->type),
+                    event->source,
+                    processorName(),
+                    handlers.size()
+                ));
+            }
+
+            lock.lock();
         }
     }
 }
 
 // publish
 void EventProcessor::publish(Event event) const {
+    event.source = std::string(processorName());
     const auto eventPtr = std::make_shared<const Event>(std::move(event));
     bus_->publish(eventPtr);
+}
+
+std::string_view EventProcessor::processorName() const {
+    if (const auto* subsystem = dynamic_cast<const Subsystem*>(this)) {
+        return subsystem->name();
+    }
+
+    // currently, Logger is the only one EventProcessor that is not Subsystem, too.
+    return "Logger";
 }

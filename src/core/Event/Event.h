@@ -128,7 +128,9 @@ using EventPtr = std::shared_ptr<const Event>;
 struct EventComparator {
     bool operator()(const EventPtr& a, const EventPtr& b) const {
         // returns true if a is less (important) than b
-        return a->priority > b->priority;
+        if (a->priority != b->priority)
+            return a->priority > b->priority;
+        return a->id > b->id;
     }
 };
 
