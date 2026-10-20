@@ -100,6 +100,8 @@ Camera::Camera(MessageBus* bus)
     requestedState_ = CameraState::Uninitialized;
     running_ = false;
     takeSnapShot_ = false;
+
+   Camera::registerHandlers();
 }
 
 Camera::~Camera() {
@@ -248,8 +250,6 @@ bool Camera::start() {
     running_.store(true);
     workerThread_ = std::jthread(&Camera::workerLoop, this);
 
-    // start the listener thread
-    Camera::registerHandlers();
     startEventLoop();
 
     bus_->subscribe(EventType::CAMERA_TAKE_SNAPSHOT, this);
