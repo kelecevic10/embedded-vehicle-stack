@@ -233,9 +233,14 @@ bool Camera::start() {
     });
 
     if (!backend_.initialize()) {
-        std::scoped_lock lock(cameraMutex_);
-        updateState(CameraState::Faulted);
-        requestedState_ = CameraState::Faulted;
+        backend_.shutdown();
+        {
+            std::scoped_lock lock(cameraMutex_);
+            updateState(CameraState::Faulted);
+            requestedState_ = CameraState::Faulted;
+            takeSnapShot_ = false;
+        }
+
         Logger::error("Camera: could not initialize backend!");
         return false;
     }
@@ -257,8 +262,30 @@ bool Camera::start() {
     }
 
     // start the worker thread
-    running_.store(true);
-    workerThread_ = std::jthread(&Camera::workerLoop, this);
+    try {
+        running_.store(true);
+        workerThread_ = std::jthread(&Camera::workerLoop, this);
+    }
+    catch (const std::system_error& exception) {
+        Logger::error(std::format(
+            "Camera: failed to create worker thread: {}",
+            exception.what()
+        ));
+
+        running_.store(false);
+        stopEventLoop();
+
+        backend_.shutdown();
+
+        {
+            std::lock_guard lock(cameraMutex_);
+            takeSnapShot_ = false;
+            currentState_ = CameraState::Uninitialized;
+            requestedState_ = CameraState::Uninitialized;
+        }
+
+        return false;
+    }
 
     bus_->subscribe(EventType::CAMERA_TAKE_SNAPSHOT, this);
     bus_->subscribe(EventType::CAMERA_START_RECORDING, this);

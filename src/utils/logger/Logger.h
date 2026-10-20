@@ -98,6 +98,14 @@ public:
             const auto payload = std::get<std::string>(e.payload);
             info(payload);
         });
+
+        subscribe(EventType::SYSTEM_SHUTDOWN, [](const Event& event) {
+            warning(std::format(
+               "System shutdown requested | event_id={} source={}",
+               event.id,
+               event.source
+            ));
+        });
     };
 
     static void info(std::string_view);

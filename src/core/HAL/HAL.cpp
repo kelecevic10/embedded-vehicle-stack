@@ -186,13 +186,35 @@ bool HAL::start() {
         return false;
     }
 
+    try {
+        running_.store(true);
+        thread_ = std::jthread(&HAL::loop, this);
+    }
+    catch (const std::system_error& exception) {
+        Logger::error(std::format(
+            "HAL: failed to create worker thread: {}",
+            exception.what()
+        ));
+
+        running_.store(false);
+        stopEventLoop();
+
+        if (!shutdownDevices()) {
+            Logger::error(
+                "HAL: failed to completely shut down devices during startup rollback"
+            );
+        }
+
+        if (pcaDriver_) pcaDriver_->shutdown();
+        if (i2cBus_) i2cBus_->closeBus();
+        activeDiagLed_ = nullptr;
+
+        return false;
+    }
+
     bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
     bus_->subscribe(EventType::MOTOR_DRIVE, this);
     bus_->subscribe(EventType::MOTOR_STOP, this);
-
-    running_.store(true);
-    thread_ = std::jthread(&HAL::loop, this);
-
 
     return true;
 }
@@ -233,10 +255,7 @@ bool HAL::stop() {
         }
     }
 
-    if (activeDiagLed_) {
-        activeDiagLed_->turnOff();
-        activeDiagLed_ = nullptr;
-    }
+    activeDiagLed_ = nullptr;
 
     return true;
 }

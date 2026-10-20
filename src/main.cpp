@@ -9,6 +9,7 @@
 #include "core/HAL/Devices/Motor/Motor.h"
 #include "utils/logger/Logger.h"
 #include "utils/logger/TerminalSink.h"
+#include "core/Event/EventTrace.h"
 
 using namespace std::chrono_literals;
 
