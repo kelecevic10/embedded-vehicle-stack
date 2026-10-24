@@ -6,11 +6,12 @@
 #define EMBEDDED_VEHICLE_STACK_HAL_H
 #include <thread>
 
-#include "GpioManager.h"
+#include "Pins/GpioManager.h"
 #include "core/MessageBus/MessageBus.h"
 #include "core/System/Subsystem.h"
 #include "Devices/Device.h"
-#include "Devices/LED.h"
+#include "Devices/LED/LED.h"
+#include "Devices/Motor/Motor.h"
 
 using hal::GpioManager;
 
@@ -44,15 +45,21 @@ public:
 private:
     std::jthread thread_;
     std::atomic<bool> running_;
-    std::unique_ptr<GpioManager> gpioManager_;
     std::vector<std::unique_ptr<Device>> devices_;
 
     bool registerDevices();
+    bool initDevices();
+    bool shutdownDevices();
 
-    LED* greenLed = nullptr;
-    LED* redLed = nullptr;
-    LED* yellowLed = nullptr;
-    LED* activeDiagLed = nullptr;
+    std::unique_ptr<GpioManager> gpioManager_;
+    std::unique_ptr<I2CBus> i2cBus_;
+    std::unique_ptr<PCADriver> pcaDriver_;
+
+    LED* greenLed_ = nullptr;
+    LED* redLed_ = nullptr;
+    LED* yellowLed_ = nullptr;
+    LED* activeDiagLed_ = nullptr;
+    Motor* leftMotor_ = nullptr;
 
     void loop();
 };

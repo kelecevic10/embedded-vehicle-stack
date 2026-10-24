@@ -50,6 +50,7 @@ GpioManager::~GpioManager()
 
 bool GpioManager::claimPin(const InputPinConfig& config) {
     if (isClaimed(config.pin)) {
+        Logger::error(std::format("Pin {} is already claimed", config.pin));
         return false;
     }
     try {
@@ -79,13 +80,15 @@ bool GpioManager::claimPin(const InputPinConfig& config) {
             );
 
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Could not claim pin {}, exception: {}", config.pin, e.what()));
         return false;
     }
 }
 
 bool GpioManager::claimPin(const OutputPinConfig& config) {
     if (isClaimed(config.pin)) {
+        Logger::error(std::format("Pin {} is already claimed", config.pin));
         return false;
     }
     try {
@@ -115,7 +118,8 @@ bool GpioManager::claimPin(const OutputPinConfig& config) {
             );
 
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Could not claim pin {}, exception: {}", config.pin, e.what()));
         return false;
     }
 }
@@ -176,7 +180,8 @@ bool GpioManager::write(unsigned int pin, PinState value) {
     try {
         claimedPin->request.set_value(pin, toGpiodValue(value));
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Could not write to pin {}, exception: {}", pin, e.what()));
         return false;
     }
 }
@@ -184,17 +189,20 @@ bool GpioManager::write(unsigned int pin, PinState value) {
 std::optional<PinState> GpioManager::read(unsigned int pin) {
     auto* claimedPin = findPin(pin);
     if (claimedPin == nullptr) {
+        Logger::warning(std::format("Cannot read from pin {} because it is not claimed", pin));
         return std::nullopt;
     }
 
     if (claimedPin->direction != PinDirection::INPUT) {
+        Logger::warning(std::format("Cannot read from pin {} because it is not an input", pin));
         return std::nullopt;
     }
 
     try {
         const auto rawValue = claimedPin->request.get_value(pin);
         return fromGpiodValue(rawValue);
-    } catch (...) {
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Could not read from pin {}, exception: {}", pin, e.what()));
         return std::nullopt;
     }
 }

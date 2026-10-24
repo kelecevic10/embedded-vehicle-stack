@@ -100,6 +100,8 @@ Camera::Camera(MessageBus* bus)
     requestedState_ = CameraState::Uninitialized;
     running_ = false;
     takeSnapShot_ = false;
+
+   Camera::registerHandlers();
 }
 
 Camera::~Camera() {
@@ -231,9 +233,14 @@ bool Camera::start() {
     });
 
     if (!backend_.initialize()) {
-        std::scoped_lock lock(cameraMutex_);
-        updateState(CameraState::Faulted);
-        requestedState_ = CameraState::Faulted;
+        backend_.shutdown();
+        {
+            std::scoped_lock lock(cameraMutex_);
+            updateState(CameraState::Faulted);
+            requestedState_ = CameraState::Faulted;
+            takeSnapShot_ = false;
+        }
+
         Logger::error("Camera: could not initialize backend!");
         return false;
     }
@@ -244,13 +251,41 @@ bool Camera::start() {
         requestedState_ = CameraState::Idle;
     }
 
-    // start the worker thread
-    running_.store(true);
-    workerThread_ = std::jthread(&Camera::workerLoop, this);
+    if (!startEventLoop()) {
+        backend_.shutdown();
 
-    // start the listener thread
-    Camera::registerHandlers();
-    startEventLoop();
+        std::lock_guard lock(cameraMutex_);
+        currentState_ = CameraState::Uninitialized;
+        requestedState_ = CameraState::Uninitialized;
+
+        return false;
+    }
+
+    // start the worker thread
+    try {
+        running_.store(true);
+        workerThread_ = std::jthread(&Camera::workerLoop, this);
+    }
+    catch (const std::system_error& exception) {
+        Logger::error(std::format(
+            "Camera: failed to create worker thread: {}",
+            exception.what()
+        ));
+
+        running_.store(false);
+        stopEventLoop();
+
+        backend_.shutdown();
+
+        {
+            std::lock_guard lock(cameraMutex_);
+            takeSnapShot_ = false;
+            currentState_ = CameraState::Uninitialized;
+            requestedState_ = CameraState::Uninitialized;
+        }
+
+        return false;
+    }
 
     bus_->subscribe(EventType::CAMERA_TAKE_SNAPSHOT, this);
     bus_->subscribe(EventType::CAMERA_START_RECORDING, this);
@@ -273,12 +308,13 @@ bool Camera::stop() {
         requestedState_ = CameraState::ShuttingDown;
     }
 
-    stopEventLoop();
     bus_->unsubscribe(EventType::CAMERA_TAKE_SNAPSHOT, this);
     bus_->unsubscribe(EventType::CAMERA_START_RECORDING, this);
     bus_->unsubscribe(EventType::CAMERA_STOP_RECORDING, this);
     bus_->unsubscribe(EventType::CAMERA_START_PREVIEW, this);
     bus_->unsubscribe(EventType::CAMERA_STOP_PREVIEW, this);
+
+    stopEventLoop();
 
     running_.store(false);
     workerCv_.notify_one();
@@ -342,6 +378,8 @@ void Camera::updateState(const CameraState &to) {
         Event stateChanged {
             EventType::SUBSYSTEM_STATE_CHANGED,
             std::format("{}: {} -> {}", name(), toString(currentState_), toString(to)),
+            10,
+            "Camera"
         };
         publish(std::move(stateChanged));
         currentState_ = to;
@@ -466,8 +504,6 @@ bool Camera::encodeJpeg(const FrameData &frame, EncodedFrame &encodedFrame, int 
         reinterpret_cast<const unsigned char*>(uPlane.data.data()),
         reinterpret_cast<const unsigned char*>(vPlane.data.data()),
     };
-
-    Logger::error(std::format("STRIDES: Y: {}, U: {}, V: {}", yPlane.stride, uPlane.stride, vPlane.stride));
 
     const int strides[3] = {
         static_cast<int>(yPlane.stride),

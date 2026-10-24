@@ -8,6 +8,7 @@
 #include "Sink.h"
 #include "core/Event/EventProcessor.h"
 #include "core/MessageBus/MessageBus.h"
+#include <mutex>
 
 
 enum class LogType : uint8_t {
@@ -50,13 +51,14 @@ public:
 
         Logger::registerHandlers();
 
-        startEventLoop();
+        if (!startEventLoop())
+            return;
 
         bus_->subscribe(EventType::DIAGNOSTICS_UPDATE, this);
         bus_->subscribe(EventType::DIAGNOSTICS_WARNING, this);
         bus_->subscribe(EventType::DIAGNOSTICS_ALERT, this);
         bus_->subscribe(EventType::SUBSYSTEM_STATE_CHANGED, this);
-        // bus_->subscribe(EventType::SYSTEM_SHUTDOWN, this);
+        bus_->subscribe(EventType::SYSTEM_SHUTDOWN, this);
     };
 
     ~Logger() override
@@ -64,10 +66,10 @@ public:
         bus_->unsubscribe(EventType::DIAGNOSTICS_UPDATE, this);
         bus_->unsubscribe(EventType::DIAGNOSTICS_WARNING, this);
         bus_->unsubscribe(EventType::DIAGNOSTICS_ALERT, this);
-        // bus_->unsubscribe(EventType::SYSTEM_SHUTDOWN, this);
-
+        bus_->unsubscribe(EventType::SYSTEM_SHUTDOWN, this);
+        bus_->unsubscribe(EventType::SUBSYSTEM_STATE_CHANGED, this);
         // the base class EventProcessor destructor calls stopEventLoop()
-        // stopEventLoop();
+        stopEventLoop();
     };
 
     void registerHandlers() override {
@@ -96,6 +98,14 @@ public:
             const auto payload = std::get<std::string>(e.payload);
             info(payload);
         });
+
+        subscribe(EventType::SYSTEM_SHUTDOWN, [](const Event& event) {
+            warning(std::format(
+               "System shutdown requested | event_id={} source={}",
+               event.id,
+               event.source
+            ));
+        });
     };
 
     static void info(std::string_view);
@@ -112,6 +122,7 @@ public:
 private:
     static std::string formatLog(LogType, std::string_view);
     static std::vector<std::unique_ptr<Sink>> sinks;
+    static std::mutex sinksMutex;
 
     static inline std::string defaultLogFolder = "../logs/";
 };

@@ -10,7 +10,7 @@
 #include <map>
 #include <queue>
 #include <thread>
-
+#include <string_view>
 #include "Event.h"
 
 // EventProcessor usage model:
@@ -76,16 +76,20 @@ public:
 protected:
     void loop();
     void subscribe(EventType event_type, std::function<void(const Event &)> handler);
-    void startEventLoop();
+    bool startEventLoop();
     void stopEventLoop();
 
     MessageBus* bus_;
     std::jthread thread_;
     std::atomic<bool> terminate_ {false};
+    bool acceptingEvents_ {false};
     EventQueue queue_;
     std::mutex mutex_;
     std::condition_variable cv_;
     std::map<EventType, std::vector<std::function<void(const Event&)>>> handlers_;
+
+private:
+    [[ nodiscard ]] std::string_view processorName() const;
 };
 
 

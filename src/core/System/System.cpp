@@ -48,7 +48,17 @@ bool System::start() {
 
     state_ = SystemState::Starting;
     Logger::info("Starting system ...");
-    bus_->start();
+
+    if (!bus_->start()) {
+        Logger::error("Could not start MessageBus. System startup aborted");
+
+        // start() can leave the bus turned off or, in case of inconsistency, leave it turned on
+        // stop() will, in both cases, give it a proper state
+        bus_->stop();
+
+        state_ = SystemState::Stopped;
+        return false;
+    }
 
     std::vector<Subsystem*> started_modules;
     for (const auto& module : subsystems_) {
